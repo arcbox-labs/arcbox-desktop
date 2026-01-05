@@ -10,6 +10,8 @@ pub struct ImageViewModel {
     pub size_bytes: u64,
     pub created_at: DateTime<Utc>,
     pub in_use: bool,
+    pub os: String,
+    pub architecture: String,
 }
 
 impl ImageViewModel {
@@ -74,6 +76,8 @@ pub fn dummy_images() -> Vec<ImageViewModel> {
             size_bytes: 187_000_000,
             created_at: now - Duration::weeks(2),
             in_use: true,
+            os: "linux".to_string(),
+            architecture: "arm64".to_string(),
         },
         ImageViewModel {
             id: "sha256:bcd234".to_string(),
@@ -82,6 +86,8 @@ pub fn dummy_images() -> Vec<ImageViewModel> {
             size_bytes: 412_000_000,
             created_at: now - Duration::days(30),
             in_use: true,
+            os: "linux".to_string(),
+            architecture: "arm64".to_string(),
         },
         ImageViewModel {
             id: "sha256:cde345".to_string(),
@@ -90,6 +96,8 @@ pub fn dummy_images() -> Vec<ImageViewModel> {
             size_bytes: 398_000_000,
             created_at: now - Duration::days(90),
             in_use: false,
+            os: "linux".to_string(),
+            architecture: "amd64".to_string(),
         },
         ImageViewModel {
             id: "sha256:def456".to_string(),
@@ -98,6 +106,8 @@ pub fn dummy_images() -> Vec<ImageViewModel> {
             size_bytes: 32_000_000,
             created_at: now - Duration::weeks(1),
             in_use: true,
+            os: "linux".to_string(),
+            architecture: "arm64".to_string(),
         },
         ImageViewModel {
             id: "sha256:efg567".to_string(),
@@ -106,6 +116,8 @@ pub fn dummy_images() -> Vec<ImageViewModel> {
             size_bytes: 128_000_000,
             created_at: now - Duration::weeks(2),
             in_use: false,
+            os: "linux".to_string(),
+            architecture: "arm64".to_string(),
         },
         ImageViewModel {
             id: "sha256:fgh678".to_string(),
@@ -114,6 +126,8 @@ pub fn dummy_images() -> Vec<ImageViewModel> {
             size_bytes: 245_000_000,
             created_at: now - Duration::hours(2),
             in_use: true,
+            os: "linux".to_string(),
+            architecture: "arm64".to_string(),
         },
         ImageViewModel {
             id: "sha256:ghi789".to_string(),
@@ -122,6 +136,8 @@ pub fn dummy_images() -> Vec<ImageViewModel> {
             size_bytes: 198_000_000,
             created_at: now - Duration::days(1),
             in_use: false,
+            os: "linux".to_string(),
+            architecture: "amd64".to_string(),
         },
         ImageViewModel {
             id: "sha256:hij890".to_string(),
@@ -130,6 +146,8 @@ pub fn dummy_images() -> Vec<ImageViewModel> {
             size_bytes: 156_000_000,
             created_at: now - Duration::days(5),
             in_use: false,
+            os: "linux".to_string(),
+            architecture: "arm64".to_string(),
         },
     ]
 }

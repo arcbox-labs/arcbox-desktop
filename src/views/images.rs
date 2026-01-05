@@ -1,146 +1,428 @@
 use gpui::*;
+use gpui::prelude::*;
 
 use crate::models::{ImageViewModel, calculate_image_stats, dummy_images};
 use crate::theme::{colors, Theme};
 
+/// Detail tab for images
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ImageDetailTab {
+    #[default]
+    Info,
+    Terminal,
+    Files,
+}
+
 /// Images list view
 pub struct ImagesView {
     images: Vec<ImageViewModel>,
+    selected_id: Option<String>,
+    active_tab: ImageDetailTab,
 }
 
 impl ImagesView {
     pub fn new(_cx: &mut Context<Self>) -> Self {
         Self {
             images: dummy_images(),
+            selected_id: None,
+            active_tab: ImageDetailTab::Info,
         }
     }
 
-    fn pull_image(&mut self, cx: &mut Context<Self>) {
-        tracing::info!("Pull image");
+    fn select_image(&mut self, id: String, cx: &mut Context<Self>) {
+        self.selected_id = Some(id);
         cx.notify();
+    }
+
+    fn set_tab(&mut self, tab: ImageDetailTab, cx: &mut Context<Self>) {
+        self.active_tab = tab;
+        cx.notify();
+    }
+
+    fn get_selected_image(&self) -> Option<&ImageViewModel> {
+        self.selected_id
+            .as_ref()
+            .and_then(|id| self.images.iter().find(|i| &i.id == id))
     }
 }
 
 impl Render for ImagesView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let (total_size, _unused_size, total_count, _unused_count) = calculate_image_stats(&self.images);
+        let (total_size, _unused_size, _total_count, _unused_count) =
+            calculate_image_stats(&self.images);
+
+        div()
+            .flex_1()
+            .flex()
+            .flex_row()
+            .overflow_hidden()
+            // Left panel - image list
+            .child(
+                div()
+                    .w(px(380.0))
+                    .h_full()
+                    .flex()
+                    .flex_col()
+                    .border_r_1()
+                    .border_color(colors::border())
+                    // Header
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .h(px(52.0))
+                            .px_4()
+                            .border_b_1()
+                            .border_color(colors::border())
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .child(
+                                        div()
+                                            .text_base()
+                                            .font_weight(FontWeight::MEDIUM)
+                                            .text_color(colors::text())
+                                            .child("Images"),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_xs()
+                                            .text_color(colors::text_muted())
+                                            .child(format_size(total_size)),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap_1()
+                                    .child(Theme::button_icon().id("sort-images").child("↕"))
+                                    .child(Theme::button_icon().id("search-images").child("⌕"))
+                                    .child(Theme::button_icon().id("add-image").child("+")),
+                            ),
+                    )
+                    // "In Use" section header
+                    .child(
+                        div()
+                            .px_4()
+                            .py_2()
+                            .text_xs()
+                            .text_color(colors::text_muted())
+                            .child("In Use"),
+                    )
+                    // Image list
+                    .child(
+                        div()
+                            .id("images-list")
+                            .flex_1()
+                            .overflow_y_scroll()
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .children(
+                                        self.images
+                                            .iter()
+                                            .map(|image| self.render_image_row(image, cx)),
+                                    ),
+                            ),
+                    ),
+            )
+            // Right panel - detail
+            .child(self.render_detail_panel(cx))
+    }
+}
+
+impl ImagesView {
+    fn render_image_row(
+        &self,
+        image: &ImageViewModel,
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
+        let id = image.id.clone();
+        let id_for_select = image.id.clone();
+        let is_selected = self.selected_id.as_ref() == Some(&id);
+
+        let base = div()
+            .id(SharedString::from(format!("image-{}", &id)))
+            .flex()
+            .items_center()
+            .gap_3()
+            .px_4()
+            .py_2()
+            .cursor_pointer()
+            .on_click(cx.listener(move |this, _, _window, cx| {
+                this.select_image(id_for_select.clone(), cx);
+            }));
+
+        let base = if is_selected {
+            base.bg(colors::selection()).text_color(colors::on_accent())
+        } else {
+            base.hover(|el| el.bg(colors::hover()))
+        };
+
+        base
+            // Image icon
+            .child(
+                div()
+                    .w(px(32.0))
+                    .h(px(32.0))
+                    .rounded_md()
+                    .bg(if is_selected {
+                        rgba(0xffffff30)
+                    } else {
+                        colors::surface_elevated()
+                    })
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .text_sm()
+                    .child(self.get_image_icon(&image.repository)),
+            )
+            // Name and size
+            .child(
+                div()
+                    .flex_1()
+                    .flex()
+                    .flex_col()
+                    .overflow_hidden()
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .text_ellipsis()
+                                    .overflow_hidden()
+                                    .whitespace_nowrap()
+                                    .child(format!("{}:{}", image.repository, image.tag)),
+                            )
+                            // Architecture badge
+                            .when(image.architecture == "amd64", |el| {
+                                el.child(
+                                    div()
+                                        .px_1p5()
+                                        .py_0p5()
+                                        .rounded(px(4.0))
+                                        .text_xs()
+                                        .bg(if is_selected {
+                                            rgba(0xffffff30)
+                                        } else {
+                                            colors::surface_elevated()
+                                        })
+                                        .child("amd64"),
+                                )
+                            }),
+                    )
+                    .child(
+                        div()
+                            .text_xs()
+                            .when(is_selected, |el| el.text_color(rgba(0xffffffaa)))
+                            .when(!is_selected, |el| el.text_color(colors::text_muted()))
+                            .child(format!(
+                                "{}, {}",
+                                image.size_display(),
+                                image.created_ago()
+                            )),
+                    ),
+            )
+            // Delete button
+            .child(
+                Theme::button_icon()
+                    .w(px(24.0))
+                    .h(px(24.0))
+                    .when(is_selected, |el| el.text_color(colors::on_accent()))
+                    .child("🗑"),
+            )
+    }
+
+    fn get_image_icon(&self, repository: &str) -> &'static str {
+        if repository.contains("postgres") {
+            "🐘"
+        } else if repository.contains("redis") {
+            "◆"
+        } else if repository.contains("nginx") {
+            "▲"
+        } else if repository.contains("node") {
+            "⬢"
+        } else if repository.contains("mongo") {
+            "🍃"
+        } else if repository.contains("python") {
+            "🐍"
+        } else if repository.contains("alpine") {
+            "🏔"
+        } else {
+            "▣"
+        }
+    }
+
+    fn render_detail_panel(&self, cx: &Context<Self>) -> impl IntoElement {
+        let selected = self.get_selected_image();
 
         div()
             .flex_1()
             .flex()
             .flex_col()
-            .overflow_hidden()
             .bg(colors::background())
-            // Header
-            .child(
-                Theme::section_header()
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap_3()
-                            .child(Theme::page_title("Images"))
-                            .child(
-                                Theme::badge().child(format!(
-                                    "{} images, {}",
-                                    total_count,
-                                    format_size(total_size)
-                                )),
-                            ),
-                    )
-                    .child(
-                        Theme::button_primary()
-                            .id("pull-image")
-                            .on_click(cx.listener(|this, _, _window, cx| {
-                                this.pull_image(cx);
-                            }))
-                            .child("Pull Image"),
-                    ),
-            )
-            // Image table
+            // Tab bar
             .child(
                 div()
-                    .id("images-list")
+                    .flex()
+                    .items_center()
+                    .h(px(52.0))
+                    .px_4()
+                    .gap_2()
+                    .border_b_1()
+                    .border_color(colors::border())
+                    .child(self.render_tab_button(ImageDetailTab::Info, "Info", cx))
+                    .child(self.render_tab_button(ImageDetailTab::Terminal, "Terminal", cx))
+                    .child(self.render_tab_button(ImageDetailTab::Files, "Files", cx)),
+            )
+            // Tab content
+            .child(
+                div()
+                    .id("image-detail-content")
                     .flex_1()
                     .overflow_y_scroll()
+                    .p_4()
+                    .child(if let Some(image) = selected {
+                        self.render_detail_content(image).into_any_element()
+                    } else {
+                        self.render_no_selection().into_any_element()
+                    }),
+            )
+    }
+
+    fn render_tab_button(
+        &self,
+        tab: ImageDetailTab,
+        label: &'static str,
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
+        let is_active = self.active_tab == tab;
+
+        div()
+            .id(SharedString::from(format!("image-tab-{:?}", tab)))
+            .px_3()
+            .py_1p5()
+            .text_sm()
+            .cursor_pointer()
+            .rounded_md()
+            .when(is_active, |el| {
+                el.bg(colors::surface_elevated())
+                    .text_color(colors::text())
+            })
+            .when(!is_active, |el| {
+                el.text_color(colors::text_muted())
+                    .hover(|el| el.text_color(colors::text()))
+            })
+            .on_click(cx.listener(move |this, _, _window, cx| {
+                this.set_tab(tab, cx);
+            }))
+            .child(label)
+    }
+
+    fn render_no_selection(&self) -> impl IntoElement {
+        div()
+            .flex_1()
+            .flex()
+            .items_center()
+            .justify_center()
+            .text_color(colors::text_muted())
+            .child("No Selection")
+    }
+
+    fn render_detail_content(&self, image: &ImageViewModel) -> impl IntoElement {
+        match self.active_tab {
+            ImageDetailTab::Info => self.render_info_tab(image).into_any_element(),
+            ImageDetailTab::Terminal => self.render_placeholder_tab("Terminal").into_any_element(),
+            ImageDetailTab::Files => self.render_placeholder_tab("Files").into_any_element(),
+        }
+    }
+
+    fn render_info_tab(&self, image: &ImageViewModel) -> impl IntoElement {
+        div()
+            .flex()
+            .flex_col()
+            .gap_4()
+            // Basic info
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .child(Theme::info_row("ID", image.id.clone()))
+                    .child(Theme::info_row(
+                        "Tag",
+                        format!("{}:{}", image.repository, image.tag),
+                    ))
+                    .child(Theme::info_row("Created", image.created_ago()))
+                    .child(Theme::info_row("Size", image.size_display()))
+                    .child(Theme::info_row(
+                        "Platform",
+                        format!("{}/{}", image.os, image.architecture),
+                    )),
+            )
+            // Export button
+            .child(
+                div()
+                    .mt_4()
+                    .p_3()
+                    .rounded_md()
+                    .border_1()
+                    .border_color(colors::border())
+                    .flex()
+                    .items_center()
+                    .gap_3()
+                    .cursor_pointer()
+                    .hover(|el| el.bg(colors::hover()))
                     .child(
                         div()
+                            .w(px(24.0))
+                            .h(px(24.0))
+                            .rounded_md()
+                            .bg(colors::surface_elevated())
                             .flex()
-                            .flex_col()
-                            // Table header
-                            .child(
-                                div()
-                                    .flex()
-                                    .items_center()
-                                    .px_4()
-                                    .py_2()
-                                    .bg(colors::surface())
-                                    .text_xs()
-                                    .text_color(colors::text_muted())
-                                    .child(div().flex_1().child("REPOSITORY"))
-                                    .child(div().w(px(100.0)).child("TAG"))
-                                    .child(div().w(px(100.0)).child("SIZE"))
-                                    .child(div().w(px(120.0)).child("CREATED")),
-                            )
-                            // Table rows
-                            .children(self.images.iter().map(|image| {
-                                self.render_image_row(image)
-                            })),
+                            .items_center()
+                            .justify_center()
+                            .text_sm()
+                            .child("⬇"),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .text_sm()
+                            .text_color(colors::text())
+                            .child("Export"),
+                    )
+                    .child(
+                        div()
+                            .text_color(colors::text_muted())
+                            .child("›"),
                     ),
             )
     }
-}
 
-impl ImagesView {
-    fn render_image_row(&self, image: &ImageViewModel) -> impl IntoElement {
+    fn render_placeholder_tab(&self, name: &'static str) -> impl IntoElement {
         div()
+            .flex_1()
             .flex()
             .items_center()
-            .px_4()
-            .py_3()
-            .border_b_1()
-            .border_color(colors::border())
-            .hover(|el| el.bg(colors::hover()))
-            // Repository
-            .child(
-                div()
-                    .flex_1()
-                    .text_sm()
-                    .text_color(colors::text())
-                    .child(image.repository.clone()),
-            )
-            // Tag
-            .child(
-                div()
-                    .w(px(100.0))
-                    .text_sm()
-                    .text_color(colors::text_muted())
-                    .child(image.tag.clone()),
-            )
-            // Size
-            .child(
-                div()
-                    .w(px(100.0))
-                    .text_sm()
-                    .text_color(colors::text_muted())
-                    .child(image.size_display()),
-            )
-            // Created
-            .child(
-                div()
-                    .w(px(120.0))
-                    .text_sm()
-                    .text_color(colors::text_muted())
-                    .child(image.created_ago()),
-            )
+            .justify_center()
+            .text_color(colors::text_muted())
+            .child(format!("{} coming soon...", name))
     }
 }
 
 fn format_size(bytes: u64) -> String {
-    let mb = bytes as f64 / 1_000_000.0;
-    if mb >= 1000.0 {
-        format!("{:.1} GB", mb / 1000.0)
+    let gb = bytes as f64 / 1_000_000_000.0;
+    if gb >= 1.0 {
+        format!("{:.2} GB total", gb)
     } else {
-        format!("{:.0} MB", mb)
+        let mb = bytes as f64 / 1_000_000.0;
+        format!("{:.0} MB total", mb)
     }
 }
