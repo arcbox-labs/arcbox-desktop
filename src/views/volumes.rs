@@ -12,11 +12,34 @@ pub enum VolumeDetailTab {
     Files,
 }
 
+/// Panel resize drag state
+#[derive(Clone)]
+struct VolumePanelResizeDrag {
+    initial_width: f32,
+}
+
+/// Visual element shown during drag (invisible)
+struct VolumePanelResizeHandleVisual {
+    #[allow(dead_code)]
+    initial_width: f32,
+}
+
+impl Render for VolumePanelResizeHandleVisual {
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        div().w(px(0.0)).h(px(0.0))
+    }
+}
+
+const LIST_MIN_WIDTH: f32 = 200.0;
+const LIST_MAX_WIDTH: f32 = 500.0;
+const LIST_DEFAULT_WIDTH: f32 = 380.0;
+
 /// Volumes list view
 pub struct VolumesView {
     volumes: Vec<VolumeViewModel>,
     selected_id: Option<String>,
     active_tab: VolumeDetailTab,
+    list_width: f32,
 }
 
 impl VolumesView {
@@ -25,7 +48,13 @@ impl VolumesView {
             volumes: dummy_volumes(),
             selected_id: None,
             active_tab: VolumeDetailTab::Info,
+            list_width: LIST_DEFAULT_WIDTH,
         }
+    }
+
+    fn resize_list(&mut self, new_width: f32, cx: &mut Context<Self>) {
+        self.list_width = new_width.clamp(LIST_MIN_WIDTH, LIST_MAX_WIDTH);
+        cx.notify();
     }
 
     fn select_volume(&mut self, id: String, cx: &mut Context<Self>) {
@@ -48,6 +77,7 @@ impl VolumesView {
 impl Render for VolumesView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let total_size: u64 = self.volumes.iter().filter_map(|v| v.size_bytes).sum();
+        let list_width = self.list_width;
 
         div()
             .flex_1()
@@ -57,12 +87,11 @@ impl Render for VolumesView {
             // Left panel - volume list
             .child(
                 div()
-                    .w(px(380.0))
+                    .w(px(list_width))
                     .h_full()
                     .flex()
                     .flex_col()
-                    .border_r_1()
-                    .border_color(colors::border())
+                    .flex_shrink_0()
                     // Header
                     .child(
                         div()
@@ -128,8 +157,39 @@ impl Render for VolumesView {
                             ),
                     ),
             )
+            // Resize handle
+            .child(self.render_resize_handle(list_width, cx))
             // Right panel - detail
             .child(self.render_detail_panel(cx))
+    }
+}
+
+impl VolumesView {
+    fn render_resize_handle(&self, current_width: f32, cx: &Context<Self>) -> impl IntoElement {
+        div()
+            .id("volume-list-resize-handle")
+            .w(px(4.0))
+            .h_full()
+            .cursor(CursorStyle::ResizeLeftRight)
+            .bg(colors::border())
+            .hover(|el| el.bg(colors::accent()))
+            .on_drag(
+                VolumePanelResizeDrag {
+                    initial_width: current_width,
+                },
+                |drag, _point, _window, cx| {
+                    cx.new(|_cx| VolumePanelResizeHandleVisual {
+                        initial_width: drag.initial_width,
+                    })
+                },
+            )
+            .on_drag_move::<VolumePanelResizeDrag>(cx.listener(
+                move |this, event: &DragMoveEvent<VolumePanelResizeDrag>, _window, cx| {
+                    let sidebar_offset: f32 = 180.0;
+                    let new_width: f32 = f32::from(event.event.position.x) - sidebar_offset;
+                    this.resize_list(new_width, cx);
+                },
+            ))
     }
 }
 
