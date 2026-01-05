@@ -17,12 +17,30 @@ pub enum DetailTab {
     Files,
 }
 
+/// Drag state for resizing the list panel
+#[derive(Clone)]
+struct ListPanelDrag;
+
+/// Empty view for drag visual (invisible)
+struct EmptyView;
+
+impl Render for EmptyView {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        div()
+    }
+}
+
+const LIST_MIN_WIDTH: f32 = 200.0;
+const LIST_MAX_WIDTH: f32 = 500.0;
+const LIST_DEFAULT_WIDTH: f32 = 340.0;
+
 /// Containers list view
 pub struct ContainersView {
     containers: Vec<ContainerViewModel>,
     selected_id: Option<String>,
     expanded_groups: HashMap<String, bool>,
     active_tab: DetailTab,
+    list_width: f32,
 }
 
 impl ContainersView {
@@ -40,7 +58,13 @@ impl ContainersView {
             selected_id: None,
             expanded_groups,
             active_tab: DetailTab::Info,
+            list_width: LIST_DEFAULT_WIDTH,
         }
+    }
+
+    fn resize_list(&mut self, new_width: f32, cx: &mut Context<Self>) {
+        self.list_width = new_width.clamp(LIST_MIN_WIDTH, LIST_MAX_WIDTH);
+        cx.notify();
     }
 
     fn toggle_group(&mut self, group: String, cx: &mut Context<Self>) {
@@ -95,6 +119,10 @@ impl Render for ContainersView {
             }
         }
 
+        let list_width = self.list_width;
+        // Sidebar width for offset calculation
+        let sidebar_width: f32 = 180.0;
+
         div()
             .size_full()
             .flex()
@@ -103,13 +131,11 @@ impl Render for ContainersView {
             // Left panel - container list
             .child(
                 div()
-                    .w(px(340.0))
+                    .w(px(list_width))
                     .h_full()
                     .flex()
                     .flex_col()
                     .flex_shrink_0()
-                    .border_r_1()
-                    .border_color(colors::border())
                     // Header
                     .child(
                         div()
@@ -187,6 +213,24 @@ impl Render for ContainersView {
                                     }),
                             ),
                     ),
+            )
+            // Resize handle
+            .child(
+                div()
+                    .id("container-list-resize")
+                    .w(px(1.0))
+                    .h_full()
+                    .flex_shrink_0()
+                    .cursor(CursorStyle::ResizeLeftRight)
+                    .bg(colors::border())
+                    .on_drag(ListPanelDrag, |_, _, _, cx| cx.new(|_| EmptyView))
+                    .on_drag_move::<ListPanelDrag>(cx.listener(
+                        move |this, event: &DragMoveEvent<ListPanelDrag>, _, cx| {
+                            let x: f32 = event.event.position.x.into();
+                            let new_width = x - sidebar_width;
+                            this.resize_list(new_width, cx);
+                        },
+                    )),
             )
             // Right panel - detail
             .child(self.render_detail_panel(cx))
