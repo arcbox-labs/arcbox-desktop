@@ -17,35 +17,12 @@ pub enum DetailTab {
     Files,
 }
 
-/// Panel resize drag state
-#[derive(Clone)]
-struct PanelResizeDrag {
-    initial_width: f32,
-}
-
-/// Visual element shown during drag (invisible)
-struct PanelResizeHandleVisual {
-    #[allow(dead_code)]
-    initial_width: f32,
-}
-
-impl Render for PanelResizeHandleVisual {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        div().w(px(0.0)).h(px(0.0))
-    }
-}
-
-const LIST_MIN_WIDTH: f32 = 200.0;
-const LIST_MAX_WIDTH: f32 = 500.0;
-const LIST_DEFAULT_WIDTH: f32 = 340.0;
-
 /// Containers list view
 pub struct ContainersView {
     containers: Vec<ContainerViewModel>,
     selected_id: Option<String>,
     expanded_groups: HashMap<String, bool>,
     active_tab: DetailTab,
-    list_width: f32,
 }
 
 impl ContainersView {
@@ -63,13 +40,7 @@ impl ContainersView {
             selected_id: None,
             expanded_groups,
             active_tab: DetailTab::Info,
-            list_width: LIST_DEFAULT_WIDTH,
         }
-    }
-
-    fn resize_list(&mut self, new_width: f32, cx: &mut Context<Self>) {
-        self.list_width = new_width.clamp(LIST_MIN_WIDTH, LIST_MAX_WIDTH);
-        cx.notify();
     }
 
     fn toggle_group(&mut self, group: String, cx: &mut Context<Self>) {
@@ -124,21 +95,21 @@ impl Render for ContainersView {
             }
         }
 
-        let list_width = self.list_width;
-
         div()
-            .flex_1()
+            .size_full()
             .flex()
             .flex_row()
             .overflow_hidden()
             // Left panel - container list
             .child(
                 div()
-                    .w(px(list_width))
+                    .w(px(340.0))
                     .h_full()
                     .flex()
                     .flex_col()
                     .flex_shrink_0()
+                    .border_r_1()
+                    .border_color(colors::border())
                     // Header
                     .child(
                         div()
@@ -217,41 +188,8 @@ impl Render for ContainersView {
                             ),
                     ),
             )
-            // Resize handle
-            .child(self.render_resize_handle(list_width, cx))
             // Right panel - detail
             .child(self.render_detail_panel(cx))
-    }
-}
-
-impl ContainersView {
-    fn render_resize_handle(&self, current_width: f32, cx: &Context<Self>) -> impl IntoElement {
-        div()
-            .id("container-list-resize-handle")
-            .w(px(4.0))
-            .h_full()
-            .cursor(CursorStyle::ResizeLeftRight)
-            .bg(colors::border())
-            .hover(|el| el.bg(colors::accent()))
-            .on_drag(
-                PanelResizeDrag {
-                    initial_width: current_width,
-                },
-                |drag, _point, _window, cx| {
-                    cx.new(|_cx| PanelResizeHandleVisual {
-                        initial_width: drag.initial_width,
-                    })
-                },
-            )
-            .on_drag_move::<PanelResizeDrag>(cx.listener(
-                move |this, event: &DragMoveEvent<PanelResizeDrag>, _window, cx| {
-                    // Calculate new width based on mouse position
-                    // Account for the sidebar width (approximately 180px)
-                    let sidebar_offset: f32 = 180.0;
-                    let new_width: f32 = f32::from(event.event.position.x) - sidebar_offset;
-                    this.resize_list(new_width, cx);
-                },
-            ))
     }
 }
 
