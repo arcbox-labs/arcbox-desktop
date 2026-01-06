@@ -2,6 +2,7 @@ mod app;
 mod assets;
 mod components;
 mod models;
+mod services;
 mod theme;
 mod views;
 
@@ -23,6 +24,14 @@ fn main() {
     Application::new()
         .with_assets(AppAssets::new())
         .run(|cx: &mut App| {
+        // Initialize tokio runtime for async operations (e.g., dimicon HTTP requests)
+        gpui_tokio::init(cx);
+
+        // Initialize HTTP client for loading remote images
+        let http_client = reqwest_client::ReqwestClient::user_agent("arcbox-desktop/0.1.0")
+            .expect("Failed to create HTTP client");
+        cx.set_http_client(std::sync::Arc::new(http_client));
+
         // Initialize theme
         theme::init(cx);
 

@@ -2,6 +2,7 @@ use gpui::*;
 use gpui::prelude::*;
 
 use crate::models::{ImageViewModel, calculate_image_stats, dummy_images};
+use crate::services::{ImageIconService, IconState};
 use crate::theme::{colors, Theme};
 
 /// Detail tab for images
@@ -36,15 +37,19 @@ pub struct ImagesView {
     selected_id: Option<String>,
     active_tab: ImageDetailTab,
     list_width: f32,
+    icon_service: Entity<ImageIconService>,
 }
 
 impl ImagesView {
-    pub fn new(_cx: &mut Context<Self>) -> Self {
+    pub fn new(cx: &mut Context<Self>) -> Self {
+        let icon_service = cx.new(ImageIconService::new);
+
         Self {
             images: dummy_images(),
             selected_id: None,
             active_tab: ImageDetailTab::Info,
             list_width: LIST_DEFAULT_WIDTH,
+            icon_service,
         }
     }
 
@@ -72,6 +77,18 @@ impl ImagesView {
 
 impl Render for ImagesView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Subscribe to icon service updates for re-rendering
+        cx.observe(&self.icon_service, |_, _, cx| cx.notify())
+            .detach();
+
+        // Trigger icon fetches for all images
+        for image in &self.images {
+            let repo = image.repository.clone();
+            self.icon_service.update(cx, |svc, cx| {
+                svc.get_icon(&repo, cx);
+            });
+        }
+
         let (total_size, _unused_size, _total_count, _unused_count) =
             calculate_image_stats(&self.images);
         let list_width = self.list_width;
@@ -218,6 +235,9 @@ impl ImagesView {
             base.hover(|el| el.bg(colors::hover()))
         };
 
+        // Get icon state from service
+        let icon_state = self.icon_service.read(cx).get_cached(&image.repository).cloned();
+
         base
             // Image icon
             .child(
@@ -233,8 +253,8 @@ impl ImagesView {
                     .flex()
                     .items_center()
                     .justify_center()
-                    .text_sm()
-                    .child(self.get_image_icon(&image.repository)),
+                    .overflow_hidden()
+                    .child(self.render_image_icon(&image.repository, icon_state, is_selected)),
             )
             // Name and size
             .child(
@@ -295,24 +315,64 @@ impl ImagesView {
             })
     }
 
-    fn get_image_icon(&self, repository: &str) -> &'static str {
-        if repository.contains("postgres") {
-            "🐘"
-        } else if repository.contains("redis") {
-            "◆"
-        } else if repository.contains("nginx") {
-            "▲"
-        } else if repository.contains("node") {
-            "⬢"
-        } else if repository.contains("mongo") {
-            "🍃"
-        } else if repository.contains("python") {
-            "🐍"
-        } else if repository.contains("alpine") {
-            "🏔"
-        } else {
-            "▣"
+    fn render_image_icon(
+        &self,
+        repository: &str,
+        icon_state: Option<IconState>,
+        _is_selected: bool,
+    ) -> impl IntoElement {
+        match icon_state {
+            Some(IconState::Found(url)) => {
+                // Display fetched icon from URL
+                img(url)
+                    .w(px(24.0))
+                    .h(px(24.0))
+                    .rounded(px(4.0))
+                    .into_any_element()
+            }
+            Some(IconState::Loading) => {
+                // Show loading placeholder with box icon
+                svg()
+                    .path("icons/box.svg")
+                    .size(px(20.0))
+                    .text_color(colors::text_muted())
+                    .into_any_element()
+            }
+            Some(IconState::NotFound) | Some(IconState::Error(_)) | None => {
+                // Fallback to box icon with random color based on repository name
+                let color = Self::get_color_for_repository(repository);
+                svg()
+                    .path("icons/box.svg")
+                    .size(px(20.0))
+                    .text_color(color)
+                    .into_any_element()
+            }
         }
+    }
+
+    /// Generate a consistent color based on repository name
+    fn get_color_for_repository(repository: &str) -> Rgba {
+        // Color palette - vibrant colors for visual distinction
+        const COLORS: &[(u8, u8, u8)] = &[
+            (239, 68, 68),   // red
+            (249, 115, 22),  // orange
+            (234, 179, 8),   // yellow
+            (34, 197, 94),   // green
+            (6, 182, 212),   // cyan
+            (59, 130, 246),  // blue
+            (139, 92, 246),  // violet
+            (236, 72, 153),  // pink
+            (168, 85, 247),  // purple
+            (20, 184, 166),  // teal
+        ];
+
+        // Simple hash based on repository name for consistent color
+        let hash: usize = repository.bytes().fold(0usize, |acc, b| {
+            acc.wrapping_mul(31).wrapping_add(b as usize)
+        });
+        let (r, g, b) = COLORS[hash % COLORS.len()];
+
+        rgba(((r as u32) << 24) | ((g as u32) << 16) | ((b as u32) << 8) | 0xFF)
     }
 
     fn render_detail_panel(&self, cx: &Context<Self>) -> impl IntoElement {

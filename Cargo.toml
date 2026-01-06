@@ -11,11 +11,21 @@ tier = "enterprise"
 commercial-use = "license-required"
 
 [dependencies]
-# GPUI core
-gpui = { git = "https://github.com/zed-industries/zed.git", package = "gpui" }
+# GPUI core (locked to known working commit)
+gpui = { git = "https://github.com/zed-industries/zed.git", package = "gpui", rev = "e8fbd5be" }
+
+# GPUI-Tokio bridge for running tokio async code
+gpui_tokio = { git = "https://github.com/zed-industries/zed.git", package = "gpui_tokio", rev = "e8fbd5be" }
+util = { git = "https://github.com/zed-industries/zed.git", package = "util", rev = "e8fbd5be" }
+
+# HTTP client for loading remote images
+reqwest_client = { git = "https://github.com/zed-industries/zed.git", package = "reqwest_client", rev = "e8fbd5be" }
 
 # Error handling
 anyhow = "1"
+
+# Docker image icons
+dimicon = "0.0.1-beta.1"
 
 # GPUI component library (optional, for advanced components)
 # gpui-component = "0.4"
