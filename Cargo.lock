@@ -98,6 +98,7 @@ dependencies = [
  "chrono",
  "cocoa 0.26.0",
  "dimicon",
+ "dirs 5.0.1",
  "futures",
  "gpui",
  "gpui_tokio",

@@ -74,7 +74,7 @@ impl ArcBoxApp {
         let image_icon_service = cx.new(ImageIconService::new);
 
         // Create views (some may depend on shared services)
-        let containers_view = cx.new(ContainersView::new);
+        let containers_view = cx.new(|cx| ContainersView::new(image_icon_service.clone(), cx));
         let machines_view = cx.new(MachinesView::new);
         let images_view = cx.new(|cx| ImagesView::new(image_icon_service.clone(), cx));
         let volumes_view = cx.new(VolumesView::new);
