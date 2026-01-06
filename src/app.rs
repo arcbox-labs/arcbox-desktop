@@ -1,6 +1,7 @@
 use gpui::*;
 use gpui::prelude::*;
 
+use crate::services::ImageIconService;
 use crate::theme::{colors, Theme};
 use crate::views::*;
 
@@ -53,6 +54,9 @@ impl NavItem {
 pub struct ArcBoxApp {
     current_nav: NavItem,
     sidebar_width: f32,
+    // Shared services
+    image_icon_service: Entity<ImageIconService>,
+    // Views
     containers_view: Entity<ContainersView>,
     machines_view: Entity<MachinesView>,
     images_view: Entity<ImagesView>,
@@ -66,15 +70,20 @@ const SIDEBAR_DEFAULT_WIDTH: f32 = 180.0;
 
 impl ArcBoxApp {
     pub fn new(cx: &mut Context<Self>) -> Self {
+        // Create shared services first
+        let image_icon_service = cx.new(ImageIconService::new);
+
+        // Create views (some may depend on shared services)
         let containers_view = cx.new(ContainersView::new);
         let machines_view = cx.new(MachinesView::new);
-        let images_view = cx.new(ImagesView::new);
+        let images_view = cx.new(|cx| ImagesView::new(image_icon_service.clone(), cx));
         let volumes_view = cx.new(VolumesView::new);
         let settings_view = cx.new(SettingsView::new);
 
         Self {
             current_nav: NavItem::Containers,
             sidebar_width: SIDEBAR_DEFAULT_WIDTH,
+            image_icon_service,
             containers_view,
             machines_view,
             images_view,

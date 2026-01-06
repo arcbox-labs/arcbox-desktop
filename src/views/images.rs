@@ -41,11 +41,22 @@ pub struct ImagesView {
 }
 
 impl ImagesView {
-    pub fn new(cx: &mut Context<Self>) -> Self {
-        let icon_service = cx.new(ImageIconService::new);
+    pub fn new(icon_service: Entity<ImageIconService>, cx: &mut Context<Self>) -> Self {
+        let images = dummy_images();
+
+        // Subscribe to icon service updates for re-rendering
+        cx.observe(&icon_service, |_, _, cx| cx.notify()).detach();
+
+        // Pre-fetch icons for all images
+        for image in &images {
+            let repo = image.repository.clone();
+            icon_service.update(cx, |svc, cx| {
+                svc.get_icon(&repo, cx);
+            });
+        }
 
         Self {
-            images: dummy_images(),
+            images,
             selected_id: None,
             active_tab: ImageDetailTab::Info,
             list_width: LIST_DEFAULT_WIDTH,
@@ -77,18 +88,6 @@ impl ImagesView {
 
 impl Render for ImagesView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        // Subscribe to icon service updates for re-rendering
-        cx.observe(&self.icon_service, |_, _, cx| cx.notify())
-            .detach();
-
-        // Trigger icon fetches for all images
-        for image in &self.images {
-            let repo = image.repository.clone();
-            self.icon_service.update(cx, |svc, cx| {
-                svc.get_icon(&repo, cx);
-            });
-        }
-
         let (total_size, _unused_size, _total_count, _unused_count) =
             calculate_image_stats(&self.images);
         let list_width = self.list_width;
@@ -330,16 +329,9 @@ impl ImagesView {
                     .rounded(px(4.0))
                     .into_any_element()
             }
-            Some(IconState::Loading) => {
-                // Show loading placeholder with box icon
-                svg()
-                    .path("icons/box.svg")
-                    .size(px(20.0))
-                    .text_color(colors::text_muted())
-                    .into_any_element()
-            }
-            Some(IconState::NotFound) | Some(IconState::Error(_)) | None => {
-                // Fallback to box icon with random color based on repository name
+            // For Loading/NotFound/Error/None, always show colored box icon
+            // This prevents visual "flash" when loading
+            _ => {
                 let color = Self::get_color_for_repository(repository);
                 svg()
                     .path("icons/box.svg")
