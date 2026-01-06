@@ -14,6 +14,9 @@ commercial-use = "license-required"
 # GPUI core
 gpui = { git = "https://github.com/zed-industries/zed.git", package = "gpui" }
 
+# Error handling
+anyhow = "1"
+
 # GPUI component library (optional, for advanced components)
 # gpui-component = "0.4"
 

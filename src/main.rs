@@ -1,4 +1,5 @@
 mod app;
+mod assets;
 mod components;
 mod models;
 mod theme;
@@ -8,6 +9,7 @@ use gpui::*;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 use app::ArcBoxApp;
+use assets::AppAssets;
 
 fn main() {
     // Initialize logging
@@ -18,7 +20,9 @@ fn main() {
 
     tracing::info!("Starting ArcBox Desktop...");
 
-    Application::new().run(|cx: &mut App| {
+    Application::new()
+        .with_assets(AppAssets::new())
+        .run(|cx: &mut App| {
         // Initialize theme
         theme::init(cx);
 

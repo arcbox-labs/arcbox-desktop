@@ -123,9 +123,21 @@ impl Render for ImagesView {
                                     .flex()
                                     .items_center()
                                     .gap_1()
-                                    .child(Theme::button_icon().id("sort-images").child("↕"))
-                                    .child(Theme::button_icon().id("search-images").child("⌕"))
-                                    .child(Theme::button_icon().id("add-image").child("+")),
+                                    .child(
+                                        Theme::button_icon()
+                                            .id("sort-images")
+                                            .child(svg().path("icons/sort.svg").size(px(14.0)).text_color(colors::text_muted()))
+                                    )
+                                    .child(
+                                        Theme::button_icon()
+                                            .id("search-images")
+                                            .child(svg().path("icons/search.svg").size(px(14.0)).text_color(colors::text_muted()))
+                                    )
+                                    .child(
+                                        Theme::button_icon()
+                                            .id("add-image")
+                                            .child(svg().path("icons/add.svg").size(px(14.0)).text_color(colors::text_muted()))
+                                    ),
                             ),
                     )
                     // "In Use" section header
@@ -274,13 +286,13 @@ impl ImagesView {
                     ),
             )
             // Delete button
-            .child(
+            .child({
+                let icon_color = if is_selected { colors::on_accent() } else { colors::text_muted() };
                 Theme::button_icon()
                     .w(px(24.0))
                     .h(px(24.0))
-                    .when(is_selected, |el| el.text_color(colors::on_accent()))
-                    .child("🗑"),
-            )
+                    .child(svg().path("icons/delete.svg").size(px(14.0)).text_color(icon_color))
+            })
     }
 
     fn get_image_icon(&self, repository: &str) -> &'static str {
@@ -431,8 +443,7 @@ impl ImagesView {
                             .flex()
                             .items_center()
                             .justify_center()
-                            .text_sm()
-                            .child("⬇"),
+                            .child(svg().path("icons/download.svg").size(px(14.0)).text_color(colors::text())),
                     )
                     .child(
                         div()

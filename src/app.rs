@@ -37,14 +37,14 @@ impl NavItem {
         }
     }
 
-    fn icon(&self) -> &'static str {
+    fn icon_path(&self) -> &'static str {
         match self {
-            NavItem::Containers => "☐",
-            NavItem::Volumes => "▤",
-            NavItem::Images => "▣",
-            NavItem::Networks => "⬡",
-            NavItem::Machines => "▦",
-            NavItem::Settings => "⚙",
+            NavItem::Containers => "icons/container.svg",
+            NavItem::Volumes => "icons/volume.svg",
+            NavItem::Images => "icons/image.svg",
+            NavItem::Networks => "icons/network.svg",
+            NavItem::Machines => "icons/machine.svg",
+            NavItem::Settings => "icons/settings.svg",
         }
     }
 }
@@ -196,10 +196,15 @@ impl ArcBoxApp {
                 this.navigate(item, cx);
             }))
             .child(
-                div()
-                    .w(px(18.0))
-                    .text_center()
-                    .child(item.icon()),
+                svg()
+                    .path(item.icon_path())
+                    .size(px(16.0))
+                    .flex_shrink_0()
+                    .text_color(if is_active {
+                        colors::on_accent()
+                    } else {
+                        colors::text()
+                    }),
             )
             .child(item.label())
     }

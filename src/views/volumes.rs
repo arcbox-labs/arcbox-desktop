@@ -121,9 +121,21 @@ impl Render for VolumesView {
                                     .flex()
                                     .items_center()
                                     .gap_1()
-                                    .child(Theme::button_icon().id("sort-volumes").child("↕"))
-                                    .child(Theme::button_icon().id("search-volumes").child("⌕"))
-                                    .child(Theme::button_icon().id("add-volume").child("+")),
+                                    .child(
+                                        Theme::button_icon()
+                                            .id("sort-volumes")
+                                            .child(svg().path("icons/sort.svg").size(px(14.0)).text_color(colors::text_muted()))
+                                    )
+                                    .child(
+                                        Theme::button_icon()
+                                            .id("search-volumes")
+                                            .child(svg().path("icons/search.svg").size(px(14.0)).text_color(colors::text_muted()))
+                                    )
+                                    .child(
+                                        Theme::button_icon()
+                                            .id("add-volume")
+                                            .child(svg().path("icons/add.svg").size(px(14.0)).text_color(colors::text_muted()))
+                                    ),
                             ),
                     )
                     // "In Use" section header
@@ -246,13 +258,13 @@ impl VolumesView {
                     ),
             )
             // Delete button
-            .child(
+            .child({
+                let icon_color = if is_selected { colors::on_accent() } else { colors::text_muted() };
                 Theme::button_icon()
                     .w(px(24.0))
                     .h(px(24.0))
-                    .when(is_selected, |el| el.text_color(colors::on_accent()))
-                    .child("🗑"),
-            )
+                    .child(svg().path("icons/delete.svg").size(px(14.0)).text_color(icon_color))
+            })
     }
 
     fn render_detail_panel(&self, cx: &Context<Self>) -> impl IntoElement {

@@ -172,12 +172,22 @@ impl Render for ContainersView {
                                     .child(
                                         Theme::button_icon()
                                             .id("filter-containers")
-                                            .child("⊕"),
+                                            .child(
+                                                svg()
+                                                    .path("icons/add.svg")
+                                                    .size(px(14.0))
+                                                    .text_color(colors::text_muted())
+                                            ),
                                     )
                                     .child(
                                         Theme::button_icon()
                                             .id("search-containers")
-                                            .child("⌕"),
+                                            .child(
+                                                svg()
+                                                    .path("icons/search.svg")
+                                                    .size(px(14.0))
+                                                    .text_color(colors::text_muted())
+                                            ),
                                     ),
                             ),
                     )
@@ -402,33 +412,48 @@ impl ContainersView {
                     .items_center()
                     .gap_0p5()
                     .child(if is_running {
+                        let icon_color = if is_selected { colors::on_accent() } else { colors::text_muted() };
                         Theme::button_icon()
                             .id(SharedString::from(format!("stop-{}", &id)))
                             .w(px(24.0))
                             .h(px(24.0))
-                            .when(is_selected, |el| el.text_color(colors::on_accent()))
                             .on_click(cx.listener(move |this, _, _window, cx| {
                                 this.stop_container(&id_for_action, cx);
                             }))
-                            .child("■")
+                            .child(
+                                svg()
+                                    .path("icons/stop.svg")
+                                    .size(px(14.0))
+                                    .text_color(icon_color)
+                            )
                     } else {
+                        let icon_color = if is_selected { colors::on_accent() } else { colors::text_muted() };
                         Theme::button_icon()
                             .id(SharedString::from(format!("start-{}", &id)))
                             .w(px(24.0))
                             .h(px(24.0))
-                            .when(is_selected, |el| el.text_color(colors::on_accent()))
                             .on_click(cx.listener(move |this, _, _window, cx| {
                                 this.start_container(&id_for_action, cx);
                             }))
-                            .child("▶")
+                            .child(
+                                svg()
+                                    .path("icons/play.svg")
+                                    .size(px(14.0))
+                                    .text_color(icon_color)
+                            )
                     })
-                    .child(
+                    .child({
+                        let icon_color = if is_selected { colors::on_accent() } else { colors::text_muted() };
                         Theme::button_icon()
                             .w(px(24.0))
                             .h(px(24.0))
-                            .when(is_selected, |el| el.text_color(colors::on_accent()))
-                            .child("🗑"),
-                    ),
+                            .child(
+                                svg()
+                                    .path("icons/delete.svg")
+                                    .size(px(14.0))
+                                    .text_color(icon_color)
+                            )
+                    }),
             )
     }
 
