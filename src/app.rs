@@ -1,9 +1,14 @@
 use gpui::*;
 use gpui::prelude::*;
 
-use crate::services::ImageIconService;
+use crate::services::{
+    DaemonEvent, DaemonManager, DaemonManagerEvent, DaemonService, DaemonState, ImageIconService,
+};
 use crate::theme::{colors, Theme};
 use crate::views::*;
+
+// Define actions using the actions! macro
+actions!(arcbox, [OpenSettings, Quit]);
 
 /// Sidebar resize drag state
 #[derive(Clone)]
@@ -22,8 +27,6 @@ pub enum NavItem {
     Networks,
     // Linux section
     Machines,
-    // General section
-    Settings,
 }
 
 impl NavItem {
@@ -34,7 +37,6 @@ impl NavItem {
             NavItem::Images => "Images",
             NavItem::Networks => "Networks",
             NavItem::Machines => "Machines",
-            NavItem::Settings => "Settings",
         }
     }
 
@@ -45,7 +47,6 @@ impl NavItem {
             NavItem::Images => "icons/image.svg",
             NavItem::Networks => "icons/network.svg",
             NavItem::Machines => "icons/machine.svg",
-            NavItem::Settings => "icons/settings.svg",
         }
     }
 }
@@ -54,14 +55,16 @@ impl NavItem {
 pub struct ArcBoxApp {
     current_nav: NavItem,
     sidebar_width: f32,
+    // Lifecycle management
+    daemon_manager: Entity<DaemonManager>,
     // Shared services
+    daemon_service: Entity<DaemonService>,
     image_icon_service: Entity<ImageIconService>,
     // Views
     containers_view: Entity<ContainersView>,
     machines_view: Entity<MachinesView>,
     images_view: Entity<ImagesView>,
     volumes_view: Entity<VolumesView>,
-    settings_view: Entity<SettingsView>,
 }
 
 const SIDEBAR_MIN_WIDTH: f32 = 120.0;
@@ -70,25 +73,84 @@ const SIDEBAR_DEFAULT_WIDTH: f32 = 180.0;
 
 impl ArcBoxApp {
     pub fn new(cx: &mut Context<Self>) -> Self {
-        // Create shared services first
+        // Create daemon manager first (handles process lifecycle)
+        let daemon_manager = cx.new(DaemonManager::new);
+
+        // Create daemon service with socket path from manager
+        let socket_path = daemon_manager.read(cx).socket_path().clone();
+        let daemon_service = cx.new(|cx| DaemonService::with_socket_path(socket_path, cx));
+
         let image_icon_service = cx.new(ImageIconService::new);
 
         // Create views (some may depend on shared services)
-        let containers_view = cx.new(|cx| ContainersView::new(image_icon_service.clone(), cx));
+        let containers_view = cx.new(|cx| {
+            ContainersView::new(daemon_service.clone(), image_icon_service.clone(), cx)
+        });
         let machines_view = cx.new(MachinesView::new);
         let images_view = cx.new(|cx| ImagesView::new(image_icon_service.clone(), cx));
         let volumes_view = cx.new(VolumesView::new);
-        let settings_view = cx.new(SettingsView::new);
+
+        // Subscribe to daemon manager events - connect when daemon is ready
+        let daemon_service_clone = daemon_service.clone();
+        cx.subscribe(
+            &daemon_manager,
+            move |_this, _, event: &DaemonManagerEvent, cx| {
+                if let DaemonManagerEvent::StateChanged(DaemonState::Running) = event {
+                    tracing::info!("Daemon is running, connecting gRPC client...");
+                    daemon_service_clone.update(cx, |svc, cx| {
+                        svc.connect(cx);
+                    });
+                }
+            },
+        )
+        .detach();
+
+        // Subscribe to daemon service events and forward to views
+        cx.subscribe(&daemon_service, |this, _, event: &DaemonEvent, cx| {
+            match event {
+                DaemonEvent::ContainersLoaded(response) => {
+                    this.containers_view.update(cx, |view, cx| {
+                        view.on_containers_loaded(response.clone(), cx);
+                    });
+                }
+                DaemonEvent::MachinesLoaded(_response) => {
+                    // TODO: Forward to machines view
+                }
+                DaemonEvent::ImagesLoaded(_response) => {
+                    // TODO: Forward to images view
+                }
+                DaemonEvent::ContainerStarted(id) => {
+                    tracing::info!("Container started: {}", id);
+                }
+                DaemonEvent::ContainerStopped(id) => {
+                    tracing::info!("Container stopped: {}", id);
+                }
+                DaemonEvent::ContainerRemoved(id) => {
+                    tracing::info!("Container removed: {}", id);
+                }
+                DaemonEvent::OperationFailed(error) => {
+                    tracing::error!("Operation failed: {}", error);
+                    // TODO: Show error notification to user
+                }
+            }
+        })
+        .detach();
+
+        // Start daemon on app launch
+        daemon_manager.update(cx, |mgr, cx| {
+            mgr.start(cx);
+        });
 
         Self {
             current_nav: NavItem::Containers,
             sidebar_width: SIDEBAR_DEFAULT_WIDTH,
+            daemon_manager,
+            daemon_service,
             image_icon_service,
             containers_view,
             machines_view,
             images_view,
             volumes_view,
-            settings_view,
         }
     }
 
@@ -143,10 +205,6 @@ impl ArcBoxApp {
             .child(div().h(px(8.0))) // Spacer
             .child(Theme::sidebar_section_header("Linux"))
             .child(self.render_nav_item(NavItem::Machines, cx))
-            // General section
-            .child(div().h(px(8.0))) // Spacer
-            .child(Theme::sidebar_section_header("General"))
-            .child(self.render_nav_item(NavItem::Settings, cx))
             // Bottom spacer
             .child(div().flex_1())
     }
@@ -237,7 +295,6 @@ impl ArcBoxApp {
                     .text_color(colors::text_muted())
                     .child("Networks (Coming Soon)")
                     .into_any_element(),
-                NavItem::Settings => self.settings_view.clone().into_any_element(),
             })
     }
 }
@@ -253,4 +310,40 @@ impl Render for ResizeHandleVisual {
         // Invisible during drag
         div().w(px(0.0)).h(px(0.0))
     }
+}
+
+// ===== Settings Window =====
+
+/// Open settings window (called from menu or Cmd+,)
+pub fn open_settings(cx: &mut App) {
+    // Check if settings window already exists
+    for window in cx.windows() {
+        if let Some(handle) = window.downcast::<SettingsView>() {
+            // Focus existing window
+            let _ = handle.update(cx, |_, window, _cx| {
+                window.activate_window();
+            });
+            return;
+        }
+    }
+
+    // Create new settings window
+    let bounds = Bounds::centered(None, size(px(700.0), px(500.0)), cx);
+    let window_options = WindowOptions {
+        titlebar: Some(TitlebarOptions {
+            title: Some("Settings".into()),
+            appears_transparent: true,
+            traffic_light_position: Some(point(px(9.0), px(9.0))),
+        }),
+        window_bounds: Some(WindowBounds::Windowed(bounds)),
+        focus: true,
+        show: true,
+        kind: WindowKind::Normal,
+        is_movable: true,
+        window_background: WindowBackgroundAppearance::Opaque,
+        ..Default::default()
+    };
+
+    cx.open_window(window_options, |_window, cx| cx.new(SettingsView::new))
+        .expect("Failed to open settings window");
 }

@@ -9,7 +9,7 @@ mod views;
 use gpui::*;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
-use app::ArcBoxApp;
+use app::{ArcBoxApp, OpenSettings, Quit, open_settings};
 use assets::AppAssets;
 
 fn main() {
@@ -34,6 +34,54 @@ fn main() {
 
         // Initialize theme
         theme::init(cx);
+
+        // Register global actions
+        cx.on_action(|_: &OpenSettings, cx| {
+            open_settings(cx);
+        });
+
+        cx.on_action(|_: &Quit, cx| {
+            cx.quit();
+        });
+
+        // Bind Cmd+, to open settings
+        cx.bind_keys([
+            KeyBinding::new("cmd-,", OpenSettings, None),
+            KeyBinding::new("cmd-q", Quit, None),
+        ]);
+
+        // Set up application menu
+        cx.set_menus(vec![
+            Menu {
+                name: "ArcBox".into(),
+                items: vec![
+                    MenuItem::action("About ArcBox", gpui::NoAction), // Placeholder
+                    MenuItem::separator(),
+                    MenuItem::action("Settings...", OpenSettings),
+                    MenuItem::separator(),
+                    MenuItem::action("Quit ArcBox", Quit),
+                ],
+            },
+            Menu {
+                name: "Edit".into(),
+                items: vec![
+                    MenuItem::os_action("Undo", gpui::NoAction, OsAction::Undo),
+                    MenuItem::os_action("Redo", gpui::NoAction, OsAction::Redo),
+                    MenuItem::separator(),
+                    MenuItem::os_action("Cut", gpui::NoAction, OsAction::Cut),
+                    MenuItem::os_action("Copy", gpui::NoAction, OsAction::Copy),
+                    MenuItem::os_action("Paste", gpui::NoAction, OsAction::Paste),
+                    MenuItem::os_action("Select All", gpui::NoAction, OsAction::SelectAll),
+                ],
+            },
+            Menu {
+                name: "Window".into(),
+                items: vec![
+                    MenuItem::action("Minimize", gpui::NoAction),
+                    MenuItem::action("Zoom", gpui::NoAction),
+                ],
+            },
+        ]);
 
         // Create main window
         let bounds = Bounds::centered(None, size(px(1200.0), px(800.0)), cx);
