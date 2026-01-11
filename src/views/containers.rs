@@ -1,10 +1,11 @@
 use std::collections::HashMap;
 
+use arcbox_api::generated::ListContainersResponse;
 use gpui::*;
 use gpui::prelude::*;
 
-use crate::models::{ContainerViewModel, dummy_containers};
-use crate::services::{ImageIconService, IconState};
+use crate::models::ContainerViewModel;
+use crate::services::{DaemonService, ImageIconService, IconState};
 use crate::theme::{colors, Theme};
 
 /// Detail panel tab
@@ -41,40 +42,80 @@ pub struct ContainersView {
     expanded_groups: HashMap<String, bool>,
     active_tab: DetailTab,
     list_width: f32,
+    daemon_service: Entity<DaemonService>,
     icon_service: Entity<ImageIconService>,
+    /// Loading state for container list
+    is_loading: bool,
 }
 
 impl ContainersView {
-    pub fn new(icon_service: Entity<ImageIconService>, cx: &mut Context<Self>) -> Self {
-        let containers = dummy_containers();
-
-        let mut expanded_groups = HashMap::new();
-        // Expand all groups by default
-        for c in &containers {
-            if let Some(ref project) = c.compose_project {
-                expanded_groups.insert(project.clone(), true);
-            }
-        }
-
+    pub fn new(
+        daemon_service: Entity<DaemonService>,
+        icon_service: Entity<ImageIconService>,
+        cx: &mut Context<Self>,
+    ) -> Self {
         // Subscribe to icon service updates for re-rendering
         cx.observe(&icon_service, |_, _, cx| cx.notify()).detach();
 
-        // Pre-fetch icons for all container images
-        for container in &containers {
+        // Subscribe to daemon service connection state changes
+        cx.observe(&daemon_service, |this, daemon, cx| {
+            if daemon.read(cx).is_connected() && this.is_loading {
+                // Request container list when connected
+                daemon.update(cx, |svc, cx| {
+                    svc.list_containers(true, cx);
+                });
+            }
+            cx.notify();
+        })
+        .detach();
+
+        Self {
+            containers: Vec::new(),
+            selected_id: None,
+            expanded_groups: HashMap::new(),
+            active_tab: DetailTab::Info,
+            list_width: LIST_DEFAULT_WIDTH,
+            daemon_service,
+            icon_service,
+            is_loading: true,
+        }
+    }
+
+    /// Handle containers loaded from daemon
+    pub fn on_containers_loaded(&mut self, response: ListContainersResponse, cx: &mut Context<Self>) {
+        self.is_loading = false;
+        self.containers = response
+            .containers
+            .into_iter()
+            .map(ContainerViewModel::from)
+            .collect();
+
+        // Update expanded groups
+        self.expanded_groups.clear();
+        for c in &self.containers {
+            if let Some(ref project) = c.compose_project {
+                self.expanded_groups.insert(project.clone(), true);
+            }
+        }
+
+        // Pre-fetch icons for new containers
+        for container in &self.containers {
             let repo = Self::extract_repository(&container.image);
-            icon_service.update(cx, |svc, cx| {
+            self.icon_service.update(cx, |svc, cx| {
                 svc.get_icon(&repo, cx);
             });
         }
 
-        Self {
-            containers,
-            selected_id: None,
-            expanded_groups,
-            active_tab: DetailTab::Info,
-            list_width: LIST_DEFAULT_WIDTH,
-            icon_service,
-        }
+        cx.notify();
+    }
+
+    /// Refresh container list from daemon
+    pub fn refresh(&mut self, cx: &mut Context<Self>) {
+        self.is_loading = true;
+        self.daemon_service.update(cx, |svc, cx| {
+            svc.list_containers(true, cx);
+        });
+        cx.notify();
     }
 
     /// Extract repository name from image string (e.g., "nginx:latest" -> "nginx")
@@ -104,14 +145,28 @@ impl ContainersView {
         cx.notify();
     }
 
-    fn start_container(&mut self, _id: &str, cx: &mut Context<Self>) {
-        tracing::info!("Start container: {}", _id);
-        cx.notify();
+    fn start_container(&mut self, id: &str, cx: &mut Context<Self>) {
+        tracing::info!("Starting container: {}", id);
+        let id = id.to_string();
+        self.daemon_service.update(cx, |svc, cx| {
+            svc.start_container(id, cx);
+        });
     }
 
-    fn stop_container(&mut self, _id: &str, cx: &mut Context<Self>) {
-        tracing::info!("Stop container: {}", _id);
-        cx.notify();
+    fn stop_container(&mut self, id: &str, cx: &mut Context<Self>) {
+        tracing::info!("Stopping container: {}", id);
+        let id = id.to_string();
+        self.daemon_service.update(cx, |svc, cx| {
+            svc.stop_container(id, 10, cx);
+        });
+    }
+
+    fn remove_container(&mut self, id: &str, cx: &mut Context<Self>) {
+        tracing::info!("Removing container: {}", id);
+        let id = id.to_string();
+        self.daemon_service.update(cx, |svc, cx| {
+            svc.remove_container(id, false, cx);
+        });
     }
 
     fn get_selected_container(&self) -> Option<&ContainerViewModel> {
@@ -218,31 +273,36 @@ impl Render for ContainersView {
                             .id("containers-list")
                             .flex_1()
                             .overflow_y_scroll()
-                            .child(
-                                div()
-                                    .flex()
-                                    .flex_col()
-                                    // Compose groups
-                                    .children(
-                                        compose_groups
-                                            .iter()
-                                            .map(|(project, containers)| {
-                                                self.render_container_group(
-                                                    project.clone(),
-                                                    containers.clone(),
-                                                    cx,
-                                                )
-                                            }),
-                                    )
-                                    // Standalone containers
-                                    .when(!standalone.is_empty(), |el| {
-                                        el.children(
-                                            standalone
+                            .when(self.containers.is_empty(), |el| {
+                                el.child(self.render_empty_state())
+                            })
+                            .when(!self.containers.is_empty(), |el| {
+                                el.child(
+                                    div()
+                                        .flex()
+                                        .flex_col()
+                                        // Compose groups
+                                        .children(
+                                            compose_groups
                                                 .iter()
-                                                .map(|c| self.render_container_row(c, false, cx)),
+                                                .map(|(project, containers)| {
+                                                    self.render_container_group(
+                                                        project.clone(),
+                                                        containers.clone(),
+                                                        cx,
+                                                    )
+                                                }),
                                         )
-                                    }),
-                            ),
+                                        // Standalone containers
+                                        .when(!standalone.is_empty(), |el| {
+                                            el.children(
+                                                standalone
+                                                    .iter()
+                                                    .map(|c| self.render_container_row(c, false, cx)),
+                                            )
+                                        }),
+                                )
+                            }),
                     ),
             )
             // Resize handle
@@ -304,16 +364,19 @@ impl ContainersView {
                     )
                     .child(
                         div()
-                            .w(px(24.0))
-                            .h(px(24.0))
+                            .w(px(28.0))
+                            .h(px(28.0))
                             .rounded_md()
                             .bg(colors::accent())
                             .flex()
                             .items_center()
                             .justify_center()
-                            .text_xs()
-                            .text_color(colors::on_accent())
-                            .child("⬡"),
+                            .child(
+                                svg()
+                                    .path("icons/layer.svg")
+                                    .size(px(18.0))
+                                    .text_color(colors::on_accent()),
+                            ),
                     )
                     .child(
                         div()
@@ -343,6 +406,7 @@ impl ContainersView {
         let id = container.id.clone();
         let id_for_select = container.id.clone();
         let id_for_action = container.id.clone();
+        let id_for_delete = container.id.clone();
         let is_selected = self.selected_id.as_ref() == Some(&id);
         let is_running = container.is_running();
 
@@ -482,8 +546,12 @@ impl ContainersView {
                     .child({
                         let icon_color = if is_selected { colors::on_accent() } else { colors::text_muted() };
                         Theme::button_icon()
+                            .id(SharedString::from(format!("delete-{}", &id)))
                             .w(px(24.0))
                             .h(px(24.0))
+                            .on_click(cx.listener(move |this, _, _window, cx| {
+                                this.remove_container(&id_for_delete, cx);
+                            }))
                             .child(
                                 svg()
                                     .path("icons/delete.svg")
@@ -516,7 +584,7 @@ impl ContainersView {
                 let color = Self::get_color_for_repository(&repo);
                 svg()
                     .path("icons/box.svg")
-                    .size(px(18.0))
+                    .size(px(16.0))
                     .text_color(if is_selected { colors::on_accent() } else { color })
                     .into_any_element()
             }
@@ -621,6 +689,74 @@ impl ContainersView {
             .justify_center()
             .text_color(colors::text_muted())
             .child("No Selection")
+    }
+
+    fn render_empty_state(&self) -> impl IntoElement {
+        div()
+            .flex_1()
+            .flex()
+            .flex_col()
+            .items_center()
+            .justify_center()
+            .gap_4()
+            .p_6()
+            .child(
+                div()
+                    .text_color(colors::text_muted())
+                    .text_sm()
+                    .child("No containers yet"),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .p_4()
+                    .rounded_lg()
+                    .bg(colors::surface_elevated())
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(colors::text_muted())
+                            .child("Quick start:"),
+                    )
+                    .child(Self::render_command_hint(
+                        "docker run -d nginx",
+                        "Run nginx server",
+                    ))
+                    .child(Self::render_command_hint(
+                        "docker run -it ubuntu bash",
+                        "Interactive Ubuntu shell",
+                    ))
+                    .child(Self::render_command_hint(
+                        "docker compose up -d",
+                        "Start compose project",
+                    )),
+            )
+    }
+
+    fn render_command_hint(command: &'static str, desc: &'static str) -> impl IntoElement {
+        div()
+            .flex()
+            .flex_col()
+            .gap_0p5()
+            .child(
+                div()
+                    .px_2()
+                    .py_1()
+                    .rounded(px(4.0))
+                    .bg(colors::background())
+                    .font_family("monospace")
+                    .text_xs()
+                    .text_color(colors::text())
+                    .child(command),
+            )
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(colors::text_muted())
+                    .child(desc),
+            )
     }
 
     fn render_detail_content(&self, container: &ContainerViewModel) -> impl IntoElement {

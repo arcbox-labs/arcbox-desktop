@@ -1,4 +1,5 @@
-use chrono::{DateTime, Utc};
+use arcbox_api::generated::{PortBinding as ProtoPortBinding, ContainerSummary};
+use chrono::{DateTime, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 
 /// Container state representation
@@ -84,94 +85,53 @@ impl ContainerViewModel {
     }
 }
 
-/// Create dummy containers for development
-pub fn dummy_containers() -> Vec<ContainerViewModel> {
-    use chrono::Duration;
-    let now = Utc::now();
+impl From<&ProtoPortBinding> for PortMapping {
+    fn from(pb: &ProtoPortBinding) -> Self {
+        Self {
+            host_port: pb.host_port as u16,
+            container_port: pb.container_port as u16,
+            protocol: pb.protocol.clone(),
+        }
+    }
+}
 
-    vec![
-        ContainerViewModel {
-            id: "a1b2c3d4e5f6".to_string(),
-            name: "nginx".to_string(),
-            image: "nginx:latest".to_string(),
-            state: ContainerState::Running,
-            ports: vec![
-                PortMapping {
-                    host_port: 8080,
-                    container_port: 80,
-                    protocol: "tcp".to_string(),
-                },
-                PortMapping {
-                    host_port: 443,
-                    container_port: 443,
-                    protocol: "tcp".to_string(),
-                },
-            ],
-            created_at: now - Duration::hours(2),
-            compose_project: Some("my-project".to_string()),
-            cpu_percent: 0.5,
-            memory_mb: 25.4,
-            memory_limit_mb: 512.0,
-        },
-        ContainerViewModel {
-            id: "b2c3d4e5f6g7".to_string(),
-            name: "postgres".to_string(),
-            image: "postgres:15".to_string(),
-            state: ContainerState::Running,
-            ports: vec![PortMapping {
-                host_port: 5432,
-                container_port: 5432,
-                protocol: "tcp".to_string(),
-            }],
-            created_at: now - Duration::days(1),
-            compose_project: Some("my-project".to_string()),
-            cpu_percent: 1.2,
-            memory_mb: 128.5,
-            memory_limit_mb: 1024.0,
-        },
-        ContainerViewModel {
-            id: "c3d4e5f6g7h8".to_string(),
-            name: "redis".to_string(),
-            image: "redis:alpine".to_string(),
-            state: ContainerState::Running,
-            ports: vec![PortMapping {
-                host_port: 6379,
-                container_port: 6379,
-                protocol: "tcp".to_string(),
-            }],
-            created_at: now - Duration::hours(3),
-            compose_project: Some("my-project".to_string()),
-            cpu_percent: 0.1,
-            memory_mb: 12.3,
-            memory_limit_mb: 256.0,
-        },
-        ContainerViewModel {
-            id: "d4e5f6g7h8i9".to_string(),
-            name: "my-app".to_string(),
-            image: "my-app:dev".to_string(),
-            state: ContainerState::Running,
-            ports: vec![PortMapping {
-                host_port: 3000,
-                container_port: 3000,
-                protocol: "tcp".to_string(),
-            }],
-            created_at: now - Duration::minutes(5),
-            compose_project: None,
-            cpu_percent: 2.5,
-            memory_mb: 256.0,
-            memory_limit_mb: 512.0,
-        },
-        ContainerViewModel {
-            id: "e5f6g7h8i9j0".to_string(),
-            name: "old-service".to_string(),
-            image: "node:18".to_string(),
-            state: ContainerState::Stopped,
-            ports: vec![],
-            created_at: now - Duration::days(2),
-            compose_project: None,
+impl From<ContainerSummary> for ContainerViewModel {
+    fn from(summary: ContainerSummary) -> Self {
+        // Parse state from string
+        let state = match summary.state.as_str() {
+            "running" => ContainerState::Running,
+            "paused" => ContainerState::Paused,
+            "restarting" => ContainerState::Restarting,
+            "dead" => ContainerState::Dead,
+            _ => ContainerState::Stopped,
+        };
+
+        // Extract container name (remove leading /)
+        let name = if summary.name.is_empty() {
+            summary.id.chars().take(12).collect()
+        } else {
+            summary.name.trim_start_matches('/').to_string()
+        };
+
+        // Parse created timestamp (Unix seconds)
+        let created_at = Utc.timestamp_opt(summary.created, 0).single().unwrap_or_else(Utc::now);
+
+        // Check for compose project label
+        let compose_project = summary.labels.get("com.docker.compose.project").cloned();
+
+        Self {
+            id: summary.id,
+            name,
+            image: summary.image,
+            state,
+            ports: summary.ports.iter().map(PortMapping::from).collect(),
+            created_at,
+            compose_project,
+            // Resource usage requires separate stats call, default to 0
             cpu_percent: 0.0,
             memory_mb: 0.0,
-            memory_limit_mb: 512.0,
-        },
-    ]
+            memory_limit_mb: 0.0,
+        }
+    }
 }
+

@@ -24,8 +24,17 @@ reqwest_client = { git = "https://github.com/zed-industries/zed.git", package = 
 # Error handling
 anyhow = "1"
 
+# ArcBox core crates
+arcbox-api = { path = "../arcbox/crates/arcbox-api" }
+prost = "0.13"
+
 # Docker image icons
 dimicon = "0.0.1-beta.1"
+
+# gRPC
+tonic = "0.12"
+tower = "0.4"
+hyper-util = "0.1"
 
 # GPUI component library (optional, for advanced components)
 # gpui-component = "0.4"

@@ -12,6 +12,63 @@ use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 use app::{ArcBoxApp, OpenSettings, Quit, open_settings};
 use assets::AppAssets;
 
+/// Set the application dock icon on macOS.
+/// This is needed for `cargo run` since there's no app bundle with Info.plist.
+#[cfg(target_os = "macos")]
+fn set_dock_icon() {
+    use cocoa::appkit::{NSApplication, NSImage};
+    use cocoa::base::{id, nil};
+    use cocoa::foundation::NSString;
+
+    unsafe {
+        // Get the icon path - try multiple locations
+        let icon_path = std::env::current_exe()
+            .ok()
+            .and_then(|exe| exe.parent().map(|p| p.to_path_buf()))
+            .and_then(|dir| {
+                // Check relative to executable first (for bundled app)
+                let bundled = dir.join("../Resources/AppIcon.icns");
+                if bundled.exists() {
+                    return Some(bundled);
+                }
+                // Then check in project directory (for cargo run)
+                let project = dir.join("../../bundle/AppIcon.icns");
+                if project.exists() {
+                    return Some(project);
+                }
+                // Try absolute path as fallback
+                let absolute = std::path::PathBuf::from(
+                    "/Users/Shiro/Developer/arcboxd/arcbox-desktop/bundle/AppIcon.icns"
+                );
+                if absolute.exists() {
+                    return Some(absolute);
+                }
+                None
+            });
+
+        if let Some(path) = icon_path {
+            let path_str = path.to_string_lossy();
+            let ns_path = NSString::alloc(nil).init_str(&path_str);
+            let image: id = NSImage::alloc(nil).initWithContentsOfFile_(ns_path);
+
+            if image != nil {
+                let app = NSApplication::sharedApplication(nil);
+                app.setApplicationIconImage_(image);
+                tracing::debug!("Dock icon set from: {}", path_str);
+            } else {
+                tracing::warn!("Failed to load dock icon from: {}", path_str);
+            }
+        } else {
+            tracing::warn!("Dock icon file not found");
+        }
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn set_dock_icon() {
+    // No-op on non-macOS platforms
+}
+
 fn main() {
     // Initialize logging
     tracing_subscriber::registry()
@@ -24,6 +81,10 @@ fn main() {
     Application::new()
         .with_assets(AppAssets::new())
         .run(|cx: &mut App| {
+        // Set dock icon for cargo run (no app bundle)
+        // Must be called after Application::new() to avoid conflicts with GPUI's NSApplication setup
+        set_dock_icon();
+
         // Initialize tokio runtime for async operations (e.g., dimicon HTTP requests)
         gpui_tokio::init(cx);
 

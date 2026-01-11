@@ -76,9 +76,9 @@ impl ArcBoxApp {
         // Create daemon manager first (handles process lifecycle)
         let daemon_manager = cx.new(DaemonManager::new);
 
-        // Create daemon service with socket path from manager
-        let socket_path = daemon_manager.read(cx).socket_path().clone();
-        let daemon_service = cx.new(|cx| DaemonService::with_socket_path(socket_path, cx));
+        // Create daemon service with gRPC socket path from manager
+        let grpc_socket_path = daemon_manager.read(cx).grpc_socket_path();
+        let daemon_service = cx.new(|cx| DaemonService::with_socket_path(grpc_socket_path, cx));
 
         let image_icon_service = cx.new(ImageIconService::new);
 
