@@ -226,6 +226,14 @@ impl Render for SettingsView {
             .bg(colors::sidebar())
             // Section navigation sidebar
             .child(self.render_settings_sidebar(cx))
+            // Vertical divider
+            .child(
+                div()
+                    .w(px(1.0))
+                    .h_full()
+                    .bg(colors::border())
+                    .flex_shrink_0(),
+            )
             // Section content
             .child(self.render_settings_content(cx))
     }

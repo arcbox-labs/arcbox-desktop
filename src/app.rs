@@ -87,7 +87,9 @@ impl ArcBoxApp {
             ContainersView::new(daemon_service.clone(), image_icon_service.clone(), cx)
         });
         let machines_view = cx.new(MachinesView::new);
-        let images_view = cx.new(|cx| ImagesView::new(image_icon_service.clone(), cx));
+        let images_view = cx.new(|cx| {
+            ImagesView::new(daemon_service.clone(), image_icon_service.clone(), cx)
+        });
         let volumes_view = cx.new(VolumesView::new);
 
         // Subscribe to daemon manager events - connect when daemon is ready
@@ -116,8 +118,10 @@ impl ArcBoxApp {
                 DaemonEvent::MachinesLoaded(_response) => {
                     // TODO: Forward to machines view
                 }
-                DaemonEvent::ImagesLoaded(_response) => {
-                    // TODO: Forward to images view
+                DaemonEvent::ImagesLoaded(response) => {
+                    this.images_view.update(cx, |view, cx| {
+                        view.on_images_loaded(response.clone(), cx);
+                    });
                 }
                 DaemonEvent::ContainerStarted(id) => {
                     tracing::info!("Container started: {}", id);

@@ -1,7 +1,8 @@
+use arcbox_api::generated::ListImagesResponse;
 use gpui::*;
 use gpui::prelude::*;
 
-use crate::models::{ImageViewModel, calculate_image_stats, dummy_images};
+use crate::models::{ImageViewModel, calculate_image_stats};
 use crate::services::{ImageIconService, IconState};
 use crate::theme::{colors, Theme};
 
@@ -37,30 +38,40 @@ pub struct ImagesView {
     selected_id: Option<String>,
     active_tab: ImageDetailTab,
     list_width: f32,
+    daemon_service: Entity<crate::services::DaemonService>,
     icon_service: Entity<ImageIconService>,
+    is_loading: bool,
 }
 
 impl ImagesView {
-    pub fn new(icon_service: Entity<ImageIconService>, cx: &mut Context<Self>) -> Self {
-        let images = dummy_images();
-
+    pub fn new(
+        daemon_service: Entity<crate::services::DaemonService>,
+        icon_service: Entity<ImageIconService>,
+        cx: &mut Context<Self>,
+    ) -> Self {
         // Subscribe to icon service updates for re-rendering
         cx.observe(&icon_service, |_, _, cx| cx.notify()).detach();
 
-        // Pre-fetch icons for all images
-        for image in &images {
-            let repo = image.repository.clone();
-            icon_service.update(cx, |svc, cx| {
-                svc.get_icon(&repo, cx);
-            });
-        }
+        // Subscribe to daemon service connection state changes
+        cx.observe(&daemon_service, |this, daemon, cx| {
+            if daemon.read(cx).is_connected() && this.is_loading {
+                // Request image list when connected
+                daemon.update(cx, |svc, cx| {
+                    svc.list_images(cx);
+                });
+            }
+            cx.notify();
+        })
+        .detach();
 
         Self {
-            images,
+            images: Vec::new(),
             selected_id: None,
             active_tab: ImageDetailTab::Info,
             list_width: LIST_DEFAULT_WIDTH,
+            daemon_service,
             icon_service,
+            is_loading: true,
         }
     }
 
@@ -83,6 +94,32 @@ impl ImagesView {
         self.selected_id
             .as_ref()
             .and_then(|id| self.images.iter().find(|i| &i.id == id))
+    }
+
+    /// Handle images loaded from daemon
+    pub fn on_images_loaded(&mut self, response: ListImagesResponse, cx: &mut Context<Self>) {
+        self.is_loading = false;
+        self.images = response
+            .images
+            .into_iter()
+            .map(ImageViewModel::from)
+            .collect();
+
+        // Request icons for all images
+        for image in &self.images {
+            self.icon_service.update(cx, |svc, cx| {
+                let _ = svc.get_icon(&image.repository, cx);
+            });
+        }
+
+        // Select first image if none selected
+        if self.selected_id.is_none() {
+            if let Some(first) = self.images.first() {
+                self.selected_id = Some(first.id.clone());
+            }
+        }
+
+        cx.notify();
     }
 }
 
@@ -171,16 +208,21 @@ impl Render for ImagesView {
                             .id("images-list")
                             .flex_1()
                             .overflow_y_scroll()
-                            .child(
-                                div()
-                                    .flex()
-                                    .flex_col()
-                                    .children(
-                                        self.images
-                                            .iter()
-                                            .map(|image| self.render_image_row(image, cx)),
-                                    ),
-                            ),
+                            .when(self.images.is_empty(), |el| {
+                                el.child(self.render_empty_state())
+                            })
+                            .when(!self.images.is_empty(), |el| {
+                                el.child(
+                                    div()
+                                        .flex()
+                                        .flex_col()
+                                        .children(
+                                            self.images
+                                                .iter()
+                                                .map(|image| self.render_image_row(image, cx)),
+                                        ),
+                                )
+                            }),
                     ),
             )
             // Resize handle
@@ -335,7 +377,7 @@ impl ImagesView {
                 let color = Self::get_color_for_repository(repository);
                 svg()
                     .path("icons/box.svg")
-                    .size(px(20.0))
+                    .size(px(16.0))
                     .text_color(color)
                     .into_any_element()
             }
@@ -441,6 +483,74 @@ impl ImagesView {
             .justify_center()
             .text_color(colors::text_muted())
             .child("No Selection")
+    }
+
+    fn render_empty_state(&self) -> impl IntoElement {
+        div()
+            .flex_1()
+            .flex()
+            .flex_col()
+            .items_center()
+            .justify_center()
+            .gap_4()
+            .p_6()
+            .child(
+                div()
+                    .text_color(colors::text_muted())
+                    .text_sm()
+                    .child("No images yet"),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .p_4()
+                    .rounded_lg()
+                    .bg(colors::surface_elevated())
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(colors::text_muted())
+                            .child("Pull an image:"),
+                    )
+                    .child(Self::render_command_hint(
+                        "docker pull nginx",
+                        "Official nginx image",
+                    ))
+                    .child(Self::render_command_hint(
+                        "docker pull postgres:16",
+                        "PostgreSQL database",
+                    ))
+                    .child(Self::render_command_hint(
+                        "docker pull redis:alpine",
+                        "Redis with Alpine Linux",
+                    )),
+            )
+    }
+
+    fn render_command_hint(command: &'static str, desc: &'static str) -> impl IntoElement {
+        div()
+            .flex()
+            .flex_col()
+            .gap_0p5()
+            .child(
+                div()
+                    .px_2()
+                    .py_1()
+                    .rounded(px(4.0))
+                    .bg(colors::background())
+                    .font_family("monospace")
+                    .text_xs()
+                    .text_color(colors::text())
+                    .child(command),
+            )
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(colors::text_muted())
+                    .child(desc),
+            )
     }
 
     fn render_detail_content(&self, image: &ImageViewModel) -> impl IntoElement {

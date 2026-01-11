@@ -1,7 +1,7 @@
 use gpui::*;
 use gpui::prelude::*;
 
-use crate::models::{VolumeViewModel, dummy_volumes};
+use crate::models::VolumeViewModel;
 use crate::theme::{colors, Theme};
 
 /// Detail tab for volumes
@@ -40,7 +40,7 @@ pub struct VolumesView {
 impl VolumesView {
     pub fn new(_cx: &mut Context<Self>) -> Self {
         Self {
-            volumes: dummy_volumes(),
+            volumes: Vec::new(),
             selected_id: None,
             active_tab: VolumeDetailTab::Info,
             list_width: LIST_DEFAULT_WIDTH,
@@ -153,16 +153,21 @@ impl Render for VolumesView {
                             .id("volumes-list")
                             .flex_1()
                             .overflow_y_scroll()
-                            .child(
-                                div()
-                                    .flex()
-                                    .flex_col()
-                                    .children(
-                                        self.volumes
-                                            .iter()
-                                            .map(|volume| self.render_volume_row(volume, cx)),
-                                    ),
-                            ),
+                            .when(self.volumes.is_empty(), |el| {
+                                el.child(self.render_empty_state())
+                            })
+                            .when(!self.volumes.is_empty(), |el| {
+                                el.child(
+                                    div()
+                                        .flex()
+                                        .flex_col()
+                                        .children(
+                                            self.volumes
+                                                .iter()
+                                                .map(|volume| self.render_volume_row(volume, cx)),
+                                        ),
+                                )
+                            }),
                     ),
             )
             // Resize handle
@@ -340,6 +345,70 @@ impl VolumesView {
             .justify_center()
             .text_color(colors::text_muted())
             .child("No Selection")
+    }
+
+    fn render_empty_state(&self) -> impl IntoElement {
+        div()
+            .flex_1()
+            .flex()
+            .flex_col()
+            .items_center()
+            .justify_center()
+            .gap_4()
+            .p_6()
+            .child(
+                div()
+                    .text_color(colors::text_muted())
+                    .text_sm()
+                    .child("No volumes yet"),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .p_4()
+                    .rounded_lg()
+                    .bg(colors::surface_elevated())
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(colors::text_muted())
+                            .child("Create a volume:"),
+                    )
+                    .child(Self::render_command_hint(
+                        "docker volume create mydata",
+                        "Create named volume",
+                    ))
+                    .child(Self::render_command_hint(
+                        "docker run -v mydata:/data nginx",
+                        "Mount volume to container",
+                    )),
+            )
+    }
+
+    fn render_command_hint(command: &'static str, desc: &'static str) -> impl IntoElement {
+        div()
+            .flex()
+            .flex_col()
+            .gap_0p5()
+            .child(
+                div()
+                    .px_2()
+                    .py_1()
+                    .rounded(px(4.0))
+                    .bg(colors::background())
+                    .font_family("monospace")
+                    .text_xs()
+                    .text_color(colors::text())
+                    .child(command),
+            )
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(colors::text_muted())
+                    .child(desc),
+            )
     }
 
     fn render_detail_content(&self, volume: &VolumeViewModel) -> impl IntoElement {

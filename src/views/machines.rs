@@ -2,7 +2,7 @@ use gpui::*;
 use gpui::prelude::*;
 
 use crate::components::MachineStatusBadge;
-use crate::models::{MachineViewModel, dummy_machines};
+use crate::models::MachineViewModel;
 use crate::theme::{colors, Theme};
 
 /// Machines list view
@@ -14,7 +14,7 @@ pub struct MachinesView {
 impl MachinesView {
     pub fn new(_cx: &mut Context<Self>) -> Self {
         Self {
-            machines: dummy_machines(),
+            machines: Vec::new(),
             selected_id: None,
         }
     }
@@ -81,12 +81,69 @@ impl Render for MachinesView {
                     .flex_1()
                     .overflow_y_scroll()
                     .p_4()
+                    .when(self.machines.is_empty(), |el| {
+                        el.child(self.render_empty_state())
+                    })
+                    .when(!self.machines.is_empty(), |el| {
+                        el.child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap_4()
+                                .children(self.machines.iter().map(|m| self.render_machine_card(m, cx))),
+                        )
+                    }),
+            )
+    }
+}
+
+impl MachinesView {
+    fn render_empty_state(&self) -> impl IntoElement {
+        div()
+            .flex_1()
+            .flex()
+            .flex_col()
+            .items_center()
+            .justify_center()
+            .gap_4()
+            .p_6()
+            .child(
+                div()
+                    .text_color(colors::text_muted())
+                    .text_sm()
+                    .child("No Linux machines yet"),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_3()
+                    .p_4()
+                    .rounded_lg()
+                    .bg(colors::surface_elevated())
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(colors::text_muted())
+                            .child("Create a new machine to run a full Linux environment:"),
+                    )
                     .child(
                         div()
                             .flex()
                             .flex_col()
-                            .gap_4()
-                            .children(self.machines.iter().map(|m| self.render_machine_card(m, cx))),
+                            .gap_1()
+                            .text_xs()
+                            .text_color(colors::text_muted())
+                            .child("• Ubuntu, Debian, Fedora, and more")
+                            .child("• Native ARM64 performance on Apple Silicon")
+                            .child("• Seamless file sharing with macOS"),
+                    )
+                    .child(
+                        div()
+                            .mt_2()
+                            .text_xs()
+                            .text_color(colors::text_muted())
+                            .child("Click \"+ New Machine\" to get started"),
                     ),
             )
     }
