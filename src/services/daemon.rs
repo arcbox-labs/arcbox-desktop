@@ -9,6 +9,7 @@ use arcbox_api::generated::{
     image_service_client::ImageServiceClient,
     machine_service_client::MachineServiceClient,
     ListContainersRequest, ListContainersResponse,
+    CreateContainerRequest, CreateContainerResponse,
     StartContainerRequest, StopContainerRequest, RemoveContainerRequest,
     ListImagesRequest, ListImagesResponse,
     ListMachinesRequest, ListMachinesResponse,
@@ -398,6 +399,71 @@ impl DaemonService {
         }).detach();
     }
 
+    /// Create a container
+    pub fn create_container(
+        &self,
+        image: String,
+        name: Option<String>,
+        cmd: Option<Vec<String>>,
+        entrypoint: Option<Vec<String>>,
+        working_dir: Option<String>,
+        start: bool,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(mut client) = self.container_client() else {
+            tracing::warn!("Not connected to daemon");
+            cx.emit(DaemonEvent::OperationFailed("Not connected to daemon".to_string()));
+            return;
+        };
+        let runtime = self.tokio_runtime.clone();
+
+        cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
+            let image_clone = image.clone();
+            let result = cx.background_executor().spawn(async move {
+                runtime.block_on(async {
+                    let request = tonic::Request::new(CreateContainerRequest {
+                        image: image_clone,
+                        name: name.unwrap_or_default(),
+                        cmd: cmd.unwrap_or_default(),
+                        entrypoint: entrypoint.unwrap_or_default(),
+                        working_dir: working_dir.unwrap_or_default(),
+                        ..Default::default()
+                    });
+                    client.create_container(request).await
+                })
+            }).await;
+
+            match result {
+                Ok(response) => {
+                    let container_id = response.into_inner().id;
+                    tracing::info!("Created container {} from image {}", container_id, image);
+
+                    cx.update(|cx| {
+                        this.update(cx, |this, cx| {
+                            cx.emit(DaemonEvent::ContainerCreated(container_id.clone()));
+
+                            // Start if requested
+                            if start {
+                                this.start_container(container_id, cx);
+                            } else {
+                                // Just refresh the list
+                                this.list_containers(true, cx);
+                            }
+                        })
+                    }).ok();
+                }
+                Err(e) => {
+                    tracing::error!("Failed to create container from {}: {}", image, e);
+                    cx.update(|cx| {
+                        this.update(cx, |_this, cx| {
+                            cx.emit(DaemonEvent::OperationFailed(format!("Failed to create container: {}", e)));
+                        })
+                    }).ok();
+                }
+            }
+        }).detach();
+    }
+
     /// List images
     pub fn list_images(&self, cx: &mut Context<Self>) {
         let Some(mut client) = self.image_client() else {
@@ -438,6 +504,8 @@ pub enum DaemonEvent {
     MachinesLoaded(ListMachinesResponse),
     ContainersLoaded(ListContainersResponse),
     ImagesLoaded(ListImagesResponse),
+    /// Container created successfully
+    ContainerCreated(String),
     /// Container started successfully
     ContainerStarted(String),
     /// Container stopped successfully

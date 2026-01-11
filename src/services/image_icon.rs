@@ -5,8 +5,9 @@ use std::sync::Arc;
 
 use dimicon::IconService;
 use gpui::*;
-use gpui_tokio::Tokio;
 use serde::{Deserialize, Serialize};
+
+use crate::tokio_bridge::Tokio;
 
 /// Cached icon state
 #[derive(Clone, Debug)]
@@ -119,15 +120,13 @@ impl ImageIconService {
         IconState::Loading
     }
 
-    /// Fetch icon asynchronously using gpui_tokio
+    /// Fetch icon asynchronously using tokio bridge
     fn fetch_icon(&mut self, image: String, cx: &mut Context<Self>) {
         let service = self.icon_service.clone();
         let image_for_fetch = image.clone();
 
-        // Use gpui_tokio to run the tokio-based dimicon fetch
-        let task = Tokio::spawn(cx, async move {
-            service.get_icon(&image_for_fetch).await
-        });
+        // Use Tokio bridge to run the async fetch
+        let task = Tokio::spawn(cx, async move { service.get_icon(&image_for_fetch).await });
 
         // Handle the result when the task completes
         cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {

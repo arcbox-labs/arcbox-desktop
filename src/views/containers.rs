@@ -7,6 +7,7 @@ use gpui::prelude::*;
 use crate::models::ContainerViewModel;
 use crate::services::{DaemonService, ImageIconService, IconState};
 use crate::theme::{colors, Theme};
+use crate::views::{NewContainerDialog, NewContainerDialogEvent};
 
 /// Detail panel tab
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -46,6 +47,8 @@ pub struct ContainersView {
     icon_service: Entity<ImageIconService>,
     /// Loading state for container list
     is_loading: bool,
+    /// New container dialog
+    new_container_dialog: Option<Entity<NewContainerDialog>>,
 }
 
 impl ContainersView {
@@ -78,7 +81,38 @@ impl ContainersView {
             daemon_service,
             icon_service,
             is_loading: true,
+            new_container_dialog: None,
         }
+    }
+
+    /// Show the new container dialog
+    fn show_new_container_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let daemon_service = self.daemon_service.clone();
+        let dialog = cx.new(|cx| NewContainerDialog::new(daemon_service, window, cx));
+
+        // Subscribe to dialog events
+        cx.subscribe(&dialog, |this, _, event: &NewContainerDialogEvent, cx| {
+            match event {
+                NewContainerDialogEvent::Close => {
+                    this.new_container_dialog = None;
+                    cx.notify();
+                }
+                NewContainerDialogEvent::Created(image) => {
+                    tracing::info!("Container created from image: {}", image);
+                    this.new_container_dialog = None;
+                    this.refresh(cx);
+                }
+                NewContainerDialogEvent::CreatedAndStarted(image) => {
+                    tracing::info!("Container created and started from image: {}", image);
+                    this.new_container_dialog = None;
+                    this.refresh(cx);
+                }
+            }
+        })
+        .detach();
+
+        self.new_container_dialog = Some(dialog);
+        cx.notify();
     }
 
     /// Handle containers loaded from daemon
@@ -247,7 +281,10 @@ impl Render for ContainersView {
                                     .gap_1()
                                     .child(
                                         Theme::button_icon()
-                                            .id("filter-containers")
+                                            .id("new-container")
+                                            .on_click(cx.listener(|this, _, window, cx| {
+                                                this.show_new_container_dialog(window, cx);
+                                            }))
                                             .child(
                                                 svg()
                                                     .path("icons/add.svg")
@@ -325,6 +362,10 @@ impl Render for ContainersView {
             )
             // Right panel - detail
             .child(self.render_detail_panel(cx))
+            // Dialog overlay
+            .when_some(self.new_container_dialog.clone(), |el, dialog| {
+                el.child(dialog)
+            })
     }
 }
 

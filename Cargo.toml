@@ -11,15 +11,13 @@ tier = "enterprise"
 commercial-use = "license-required"
 
 [dependencies]
-# GPUI core (locked to known working commit)
-gpui = { git = "https://github.com/zed-industries/zed.git", package = "gpui", rev = "e8fbd5be" }
+# GPUI core
+gpui = "0.2.2"
+# GPUI component library for Input, Button, etc.
+gpui-component = "0.5.0"
 
-# GPUI-Tokio bridge for running tokio async code
-gpui_tokio = { git = "https://github.com/zed-industries/zed.git", package = "gpui_tokio", rev = "e8fbd5be" }
-util = { git = "https://github.com/zed-industries/zed.git", package = "util", rev = "e8fbd5be" }
-
-# HTTP client for loading remote images
-reqwest_client = { git = "https://github.com/zed-industries/zed.git", package = "reqwest_client", rev = "e8fbd5be" }
+# HTTP client for remote image loading
+reqwest = { version = "0.12", features = ["json"] }
 
 # Error handling
 anyhow = "1"
@@ -35,9 +33,6 @@ dimicon = "0.0.1-beta.1"
 tonic = "0.12"
 tower = "0.4"
 hyper-util = "0.1"
-
-# GPUI component library (optional, for advanced components)
-# gpui-component = "0.4"
 
 # Async
 tokio = { version = "1", features = ["full"] }

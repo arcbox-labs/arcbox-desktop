@@ -123,6 +123,9 @@ impl ArcBoxApp {
                         view.on_images_loaded(response.clone(), cx);
                     });
                 }
+                DaemonEvent::ContainerCreated(id) => {
+                    tracing::info!("Container created: {}", id);
+                }
                 DaemonEvent::ContainerStarted(id) => {
                     tracing::info!("Container started: {}", id);
                 }

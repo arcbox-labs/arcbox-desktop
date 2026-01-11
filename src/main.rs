@@ -4,6 +4,7 @@ mod components;
 mod models;
 mod services;
 mod theme;
+mod tokio_bridge;
 mod views;
 
 use gpui::*;
@@ -11,6 +12,7 @@ use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 use app::{ArcBoxApp, OpenSettings, Quit, open_settings};
 use assets::AppAssets;
+use components::register_text_input_bindings;
 
 /// Set the application dock icon on macOS.
 /// This is needed for `cargo run` since there's no app bundle with Info.plist.
@@ -86,15 +88,16 @@ fn main() {
         set_dock_icon();
 
         // Initialize tokio runtime for async operations (e.g., dimicon HTTP requests)
-        gpui_tokio::init(cx);
+        tokio_bridge::init(cx);
 
-        // Initialize HTTP client for loading remote images
-        let http_client = reqwest_client::ReqwestClient::user_agent("arcbox-desktop/0.1.0")
-            .expect("Failed to create HTTP client");
-        cx.set_http_client(std::sync::Arc::new(http_client));
+        // Initialize gpui-component (theme, input key bindings, etc.)
+        gpui_component::init(cx);
 
-        // Initialize theme
+        // Initialize our custom theme (after gpui-component)
         theme::init(cx);
+
+        // Register text input bindings
+        register_text_input_bindings(cx);
 
         // Register global actions
         cx.on_action(|_: &OpenSettings, cx| {
@@ -161,8 +164,12 @@ fn main() {
             ..Default::default()
         };
 
-        cx.open_window(window_options, |_window, cx| cx.new(ArcBoxApp::new))
-            .expect("Failed to open main window");
+        cx.open_window(window_options, |window, cx| {
+            let app_view = cx.new(ArcBoxApp::new);
+            // Wrap in gpui_component::Root for Input/Dialog support
+            cx.new(|cx| gpui_component::Root::new(app_view, window, cx))
+        })
+        .expect("Failed to open main window");
 
         cx.activate(true);
 
