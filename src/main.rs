@@ -153,7 +153,8 @@ fn main() {
             titlebar: Some(TitlebarOptions {
                 title: Some("ArcBox".into()),
                 appears_transparent: true,
-                traffic_light_position: Some(point(px(9.0), px(9.0))),
+                // macOS standard traffic light position (slightly inset from edge)
+                traffic_light_position: Some(point(px(13.0), px(16.0))),
             }),
             window_bounds: Some(WindowBounds::Windowed(bounds)),
             focus: true,

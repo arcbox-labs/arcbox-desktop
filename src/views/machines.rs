@@ -109,7 +109,7 @@ impl MachinesView {
             .p_6()
             .child(
                 div()
-                    .text_color(colors::text_muted())
+                    .text_color(colors::text_secondary())
                     .text_sm()
                     .child("No Linux machines yet"),
             )
@@ -124,7 +124,7 @@ impl MachinesView {
                     .child(
                         div()
                             .text_xs()
-                            .text_color(colors::text_muted())
+                            .text_color(colors::text_secondary())
                             .child("Create a new machine to run a full Linux environment:"),
                     )
                     .child(
@@ -133,7 +133,7 @@ impl MachinesView {
                             .flex_col()
                             .gap_1()
                             .text_xs()
-                            .text_color(colors::text_muted())
+                            .text_color(colors::text_secondary())
                             .child("• Ubuntu, Debian, Fedora, and more")
                             .child("• Native ARM64 performance on Apple Silicon")
                             .child("• Seamless file sharing with macOS"),
@@ -142,7 +142,7 @@ impl MachinesView {
                         div()
                             .mt_2()
                             .text_xs()
-                            .text_color(colors::text_muted())
+                            .text_color(colors::text_secondary())
                             .child("Click \"+ New Machine\" to get started"),
                     ),
             )
@@ -209,7 +209,7 @@ impl MachinesView {
                             .items_center()
                             .gap_4()
                             .text_sm()
-                            .text_color(colors::text_muted())
+                            .text_color(colors::text_secondary())
                             .child(format!("CPU: {} cores", machine.cpu_cores))
                             .child(format!("Memory: {} GB", machine.memory_gb))
                             .child(format!("Disk: {} GB", machine.disk_gb)),
@@ -220,7 +220,7 @@ impl MachinesView {
                             div()
                                 .mt_2()
                                 .text_sm()
-                                .text_color(colors::text_muted())
+                                .text_color(colors::text_secondary())
                                 .child(format!("IP: {}", ip)),
                         )
                     })

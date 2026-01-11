@@ -8,12 +8,17 @@ use arcbox_api::generated::{
     container_service_client::ContainerServiceClient,
     image_service_client::ImageServiceClient,
     machine_service_client::MachineServiceClient,
+    network_service_client::NetworkServiceClient,
     ListContainersRequest, ListContainersResponse,
     CreateContainerRequest, CreateContainerResponse,
     StartContainerRequest, StopContainerRequest, RemoveContainerRequest,
     ListImagesRequest, ListImagesResponse,
     ListMachinesRequest, ListMachinesResponse,
+    ListNetworksRequest, ListNetworksResponse,
+    CreateNetworkRequest, RemoveNetworkRequest,
+    ContainerLogsRequest, LogEntry,
 };
+use futures::StreamExt;
 use gpui::*;
 use tokio::net::UnixStream;
 use tonic::transport::{Channel, Endpoint, Uri};
@@ -203,6 +208,11 @@ impl DaemonService {
     /// Get image service client
     pub fn image_client(&self) -> Option<ImageServiceClient<Channel>> {
         self.channel.clone().map(ImageServiceClient::new)
+    }
+
+    /// Get network service client
+    pub fn network_client(&self) -> Option<NetworkServiceClient<Channel>> {
+        self.channel.clone().map(NetworkServiceClient::new)
     }
 
     /// List machines
@@ -496,6 +506,242 @@ impl DaemonService {
             }
         }).detach();
     }
+
+    /// Subscribe to container logs (streaming)
+    ///
+    /// Emits `LogsReceived` events as log entries arrive.
+    /// Returns immediately; logs are delivered asynchronously via events.
+    pub fn subscribe_logs(
+        &self,
+        container_id: String,
+        follow: bool,
+        tail: Option<u32>,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(mut client) = self.container_client() else {
+            tracing::warn!("Not connected to daemon");
+            return;
+        };
+        let runtime = self.tokio_runtime.clone();
+        let id = container_id.clone();
+
+        tracing::info!("Subscribing to logs for container {}", container_id);
+
+        cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
+            let id_for_request = id.clone();
+            let runtime_clone = runtime.clone();
+
+            // Connect to log stream in background
+            let result = cx.background_executor().spawn(async move {
+                runtime_clone.block_on(async {
+                    let request = tonic::Request::new(ContainerLogsRequest {
+                        id: id_for_request,
+                        follow,
+                        stdout: true,
+                        stderr: true,
+                        timestamps: true,
+                        since: 0,
+                        until: 0,
+                        tail: tail.map(i64::from).unwrap_or(100),
+                    });
+                    client.container_logs(request).await
+                })
+            }).await;
+
+            match result {
+                Ok(response) => {
+                    tracing::debug!("Log stream started for container {}", id);
+
+                    // Process stream entries in background using channels
+                    let id_for_stream = id.clone();
+                    let stream = response.into_inner();
+
+                    // Use std channel for cross-thread communication
+                    let (tx, rx) = std::sync::mpsc::channel();
+
+                    // Spawn the stream processing in the tokio runtime
+                    cx.background_executor().spawn({
+                        let runtime = runtime.clone();
+                        let id_for_bg = id_for_stream.clone();
+                        async move {
+                            runtime.block_on(async {
+                                use futures::StreamExt as _;
+                                let mut stream = stream;
+                                while let Some(entry_result) = stream.next().await {
+                                    match entry_result {
+                                        Ok(log_entry) => {
+                                            if tx.send(log_entry).is_err() {
+                                                break; // Receiver dropped
+                                            }
+                                        }
+                                        Err(e) => {
+                                            tracing::error!("Log stream error for {}: {}", id_for_bg, e);
+                                            break;
+                                        }
+                                    }
+                                }
+                                tracing::debug!("Log stream ended for {}", id_for_bg);
+                            });
+                        }
+                    }).detach();
+
+                    // Process received log entries from std channel using non-blocking recv
+                    loop {
+                        match rx.try_recv() {
+                            Ok(log_entry) => {
+                                let container_id = id_for_stream.clone();
+                                cx.update(|cx| {
+                                    this.update(cx, |_this, cx| {
+                                        cx.emit(DaemonEvent::LogsReceived {
+                                            container_id,
+                                            entry: log_entry,
+                                        });
+                                    })
+                                }).ok();
+                            }
+                            Err(std::sync::mpsc::TryRecvError::Empty) => {
+                                // No message available, yield and try again
+                                cx.background_executor().timer(std::time::Duration::from_millis(10)).await;
+                            }
+                            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                                // Channel closed, stream ended
+                                break;
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Failed to subscribe to logs for {}: {}", id, e);
+                }
+            }
+        }).detach();
+    }
+
+    /// List networks
+    pub fn list_networks(&self, cx: &mut Context<Self>) {
+        let Some(mut client) = self.network_client() else {
+            tracing::warn!("Not connected to daemon");
+            return;
+        };
+        let runtime = self.tokio_runtime.clone();
+
+        cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
+            let result = cx.background_executor().spawn(async move {
+                runtime.block_on(async {
+                    let request = tonic::Request::new(ListNetworksRequest::default());
+                    client.list_networks(request).await
+                })
+            }).await;
+
+            match result {
+                Ok(response) => {
+                    let networks = response.into_inner();
+                    tracing::debug!("Got {} networks", networks.networks.len());
+                    cx.update(|cx| {
+                        this.update(cx, |_this, cx| {
+                            cx.emit(DaemonEvent::NetworksLoaded(networks));
+                        })
+                    }).ok();
+                }
+                Err(e) => {
+                    tracing::error!("Failed to list networks: {}", e);
+                }
+            }
+        }).detach();
+    }
+
+    /// Create a network
+    pub fn create_network(
+        &self,
+        name: String,
+        driver: Option<String>,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(mut client) = self.network_client() else {
+            tracing::warn!("Not connected to daemon");
+            cx.emit(DaemonEvent::OperationFailed("Not connected to daemon".to_string()));
+            return;
+        };
+        let runtime = self.tokio_runtime.clone();
+
+        cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
+            let name_clone = name.clone();
+            let result = cx.background_executor().spawn(async move {
+                runtime.block_on(async {
+                    let request = tonic::Request::new(CreateNetworkRequest {
+                        name: name_clone,
+                        driver: driver.unwrap_or_default(),
+                        internal: false,
+                        labels: Default::default(),
+                    });
+                    client.create_network(request).await
+                })
+            }).await;
+
+            match result {
+                Ok(response) => {
+                    let network_id = response.into_inner().id;
+                    tracing::info!("Created network {} with id {}", name, network_id);
+                    cx.update(|cx| {
+                        this.update(cx, |this, cx| {
+                            cx.emit(DaemonEvent::NetworkCreated(network_id));
+                            // Refresh network list
+                            this.list_networks(cx);
+                        })
+                    }).ok();
+                }
+                Err(e) => {
+                    tracing::error!("Failed to create network {}: {}", name, e);
+                    cx.update(|cx| {
+                        this.update(cx, |_this, cx| {
+                            cx.emit(DaemonEvent::OperationFailed(format!("Failed to create network: {}", e)));
+                        })
+                    }).ok();
+                }
+            }
+        }).detach();
+    }
+
+    /// Remove a network
+    pub fn remove_network(&self, id: String, cx: &mut Context<Self>) {
+        let Some(mut client) = self.network_client() else {
+            tracing::warn!("Not connected to daemon");
+            cx.emit(DaemonEvent::OperationFailed("Not connected to daemon".to_string()));
+            return;
+        };
+        let runtime = self.tokio_runtime.clone();
+
+        cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
+            let id_clone = id.clone();
+            let result = cx.background_executor().spawn(async move {
+                runtime.block_on(async {
+                    let request = tonic::Request::new(RemoveNetworkRequest { id: id_clone });
+                    client.remove_network(request).await
+                })
+            }).await;
+
+            match result {
+                Ok(_) => {
+                    tracing::info!("Removed network {}", id);
+                    cx.update(|cx| {
+                        this.update(cx, |this, cx| {
+                            cx.emit(DaemonEvent::NetworkRemoved(id));
+                            // Refresh network list
+                            this.list_networks(cx);
+                        })
+                    }).ok();
+                }
+                Err(e) => {
+                    tracing::error!("Failed to remove network {}: {}", id, e);
+                    cx.update(|cx| {
+                        this.update(cx, |_this, cx| {
+                            cx.emit(DaemonEvent::OperationFailed(format!("Failed to remove network: {}", e)));
+                        })
+                    }).ok();
+                }
+            }
+        }).detach();
+    }
 }
 
 /// Events emitted by DaemonService
@@ -504,6 +750,7 @@ pub enum DaemonEvent {
     MachinesLoaded(ListMachinesResponse),
     ContainersLoaded(ListContainersResponse),
     ImagesLoaded(ListImagesResponse),
+    NetworksLoaded(ListNetworksResponse),
     /// Container created successfully
     ContainerCreated(String),
     /// Container started successfully
@@ -512,8 +759,17 @@ pub enum DaemonEvent {
     ContainerStopped(String),
     /// Container removed successfully
     ContainerRemoved(String),
+    /// Network created successfully
+    NetworkCreated(String),
+    /// Network removed successfully
+    NetworkRemoved(String),
     /// Operation failed with error message
     OperationFailed(String),
+    /// Log entry received from container
+    LogsReceived {
+        container_id: String,
+        entry: LogEntry,
+    },
 }
 
 impl EventEmitter<DaemonEvent> for DaemonService {}

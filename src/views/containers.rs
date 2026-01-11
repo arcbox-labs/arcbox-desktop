@@ -6,9 +6,10 @@ use gpui::prelude::*;
 use gpui_component::tab::TabBar;
 use gpui_component::Sizable;
 
+use crate::components::LogViewer;
 use crate::models::ContainerViewModel;
 use crate::services::{DaemonService, ImageIconService, IconState};
-use crate::theme::{colors, Theme};
+use crate::theme::{colors, Theme, MONO_FONT};
 use crate::views::open_new_container_dialog;
 
 /// Detail panel tab
@@ -79,6 +80,8 @@ pub struct ContainersView {
     icon_service: Entity<ImageIconService>,
     /// Loading state for container list
     is_loading: bool,
+    /// Cached log viewers per container
+    log_viewers: HashMap<String, Entity<LogViewer>>,
 }
 
 impl ContainersView {
@@ -111,6 +114,7 @@ impl ContainersView {
             daemon_service,
             icon_service,
             is_loading: true,
+            log_viewers: HashMap::new(),
         }
     }
 
@@ -227,6 +231,18 @@ impl ContainersView {
 
 impl Render for ContainersView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Ensure LogViewer exists for selected container when on Logs tab
+        if self.active_tab == DetailTab::Logs {
+            if let Some(ref id) = self.selected_id {
+                if !self.log_viewers.contains_key(id) {
+                    let container_id = id.clone();
+                    let daemon_service = self.daemon_service.clone();
+                    let viewer = cx.new(|cx| LogViewer::new(container_id, daemon_service, cx));
+                    self.log_viewers.insert(id.clone(), viewer);
+                }
+            }
+        }
+
         let running_count = self.containers.iter().filter(|c| c.is_running()).count();
 
         // Group containers
@@ -261,7 +277,7 @@ impl Render for ContainersView {
                     .flex()
                     .flex_col()
                     .flex_shrink_0()
-                    // Header
+                    // Header - macOS style
                     .child(
                         div()
                             .flex()
@@ -275,17 +291,18 @@ impl Render for ContainersView {
                                 div()
                                     .flex()
                                     .flex_col()
+                                    .gap_0p5()
                                     .child(
                                         div()
-                                            .text_base()
-                                            .font_weight(FontWeight::MEDIUM)
+                                            .text_sm()
+                                            .font_weight(FontWeight::SEMIBOLD)
                                             .text_color(colors::text())
                                             .child("Containers"),
                                     )
                                     .child(
                                         div()
                                             .text_xs()
-                                            .text_color(colors::text_muted())
+                                            .text_color(colors::text_secondary())
                                             .child(format!("{} running", running_count)),
                                     ),
                             )
@@ -303,8 +320,8 @@ impl Render for ContainersView {
                                             .child(
                                                 svg()
                                                     .path("icons/add.svg")
-                                                    .size(px(14.0))
-                                                    .text_color(colors::text_muted())
+                                                    .size(px(16.0))
+                                                    .text_color(colors::text_secondary())
                                             ),
                                     )
                                     .child(
@@ -313,8 +330,8 @@ impl Render for ContainersView {
                                             .child(
                                                 svg()
                                                     .path("icons/search.svg")
-                                                    .size(px(14.0))
-                                                    .text_color(colors::text_muted())
+                                                    .size(px(16.0))
+                                                    .text_color(colors::text_secondary())
                                             ),
                                     ),
                             ),
@@ -357,7 +374,7 @@ impl Render for ContainersView {
                             }),
                     ),
             )
-            // Resize handle
+            // Resize handle - subtle macOS style
             .child(
                 div()
                     .id("container-list-resize")
@@ -365,7 +382,8 @@ impl Render for ContainersView {
                     .h_full()
                     .flex_shrink_0()
                     .cursor(CursorStyle::ResizeLeftRight)
-                    .bg(colors::border())
+                    .bg(colors::border_subtle())
+                    .hover(|el| el.bg(colors::border()))
                     .on_drag(ListPanelDrag, |_, _, _, cx| cx.new(|_| EmptyView))
                     .on_drag_move::<ListPanelDrag>(cx.listener(
                         move |this, event: &DragMoveEvent<ListPanelDrag>, _, cx| {
@@ -400,26 +418,31 @@ impl ContainersView {
                     .flex()
                     .items_center()
                     .gap_2()
-                    .px_4()
-                    .py_2()
+                    .h(px(36.0))
+                    .mx_2()
+                    .px_2()
+                    .rounded(px(6.0))
                     .cursor_pointer()
                     .hover(|el| el.bg(colors::hover()))
                     .on_click(cx.listener(move |this, _, _window, cx| {
                         this.toggle_group(project_for_click.clone(), cx);
                     }))
                     .child(
-                        div()
-                            .w(px(16.0))
-                            .text_xs()
-                            .text_color(colors::text_muted())
-                            .child(if is_expanded { "▼" } else { "▶" }),
+                        svg()
+                            .path(if is_expanded {
+                                "icons/chevron-down.svg"
+                            } else {
+                                "icons/chevron-right.svg"
+                            })
+                            .size(px(14.0))
+                            .text_color(colors::text_secondary()),
                     )
                     .child(
                         div()
                             .w(px(28.0))
                             .h(px(28.0))
-                            .rounded_md()
-                            .bg(colors::accent())
+                            .rounded(px(6.0))
+                            .bg(colors::surface_elevated())
                             .flex()
                             .items_center()
                             .justify_center()
@@ -427,7 +450,7 @@ impl ContainersView {
                                 svg()
                                     .path("icons/layer.svg")
                                     .size(px(18.0))
-                                    .text_color(colors::on_accent()),
+                                    .text_color(colors::accent()),
                             ),
                     )
                     .child(
@@ -467,11 +490,12 @@ impl ContainersView {
             .flex()
             .items_center()
             .gap_2()
-            .py_1p5()
-            .pr_2()
+            .h(px(44.0)) // macOS standard list row height
+            .mx_2() // Horizontal margin for rounded selection
+            .px_2()
+            .rounded(px(6.0)) // macOS rounded selection
             .cursor_pointer()
-            .when(indented, |el| el.pl(px(44.0)))
-            .when(!indented, |el| el.pl_4())
+            .when(indented, |el| el.ml(px(36.0)))
             .on_click(cx.listener(move |this, _, _window, cx| {
                 this.select_container(id_for_select.clone(), cx);
             }));
@@ -494,13 +518,13 @@ impl ContainersView {
             .child(
                 div()
                     .relative()
-                    .w(px(28.0))
-                    .h(px(28.0))
+                    .w(px(32.0))
+                    .h(px(32.0))
                     // Only show background and rounded for fallback icons
                     .when(!has_icon, |el| {
-                        el.rounded_md()
+                        el.rounded(px(6.0))
                             .bg(if is_selected {
-                                rgba(0xffffff30)
+                                rgba(0xffffff20)
                             } else {
                                 colors::surface_elevated()
                             })
@@ -510,14 +534,14 @@ impl ContainersView {
                     .justify_center()
                     .overflow_hidden()
                     .child(self.render_container_icon(&container.image, is_selected, cx))
-                    // Status dot (bottom-right)
+                    // Status dot (bottom-right) - macOS style
                     .child(
                         div()
                             .absolute()
-                            .right(px(-1.0))
-                            .bottom(px(-1.0))
-                            .w(px(10.0))
-                            .h(px(10.0))
+                            .right(px(-2.0))
+                            .bottom(px(-2.0))
+                            .w(px(12.0))
+                            .h(px(12.0))
                             .rounded_full()
                             .border_2()
                             .border_color(if is_selected {
@@ -538,10 +562,12 @@ impl ContainersView {
                     .flex_1()
                     .flex()
                     .flex_col()
+                    .gap_0p5()
                     .overflow_hidden()
                     .child(
                         div()
                             .text_sm()
+                            .font_weight(FontWeight::MEDIUM)
                             .text_ellipsis()
                             .overflow_hidden()
                             .whitespace_nowrap()
@@ -554,7 +580,7 @@ impl ContainersView {
                             .overflow_hidden()
                             .whitespace_nowrap()
                             .when(is_selected, |el| el.text_color(rgba(0xffffffaa)))
-                            .when(!is_selected, |el| el.text_color(colors::text_muted()))
+                            .when(!is_selected, |el| el.text_color(colors::text_secondary()))
                             .child(container.image.clone()),
                     ),
             )
@@ -563,51 +589,45 @@ impl ContainersView {
                 div()
                     .flex()
                     .items_center()
-                    .gap_0p5()
+                    .gap_1()
                     .child(if is_running {
-                        let icon_color = if is_selected { colors::on_accent() } else { colors::text_muted() };
+                        let icon_color = if is_selected { colors::on_accent() } else { colors::text_secondary() };
                         Theme::button_icon()
                             .id(SharedString::from(format!("stop-{}", &id)))
-                            .w(px(24.0))
-                            .h(px(24.0))
                             .on_click(cx.listener(move |this, _, _window, cx| {
                                 this.stop_container(&id_for_action, cx);
                             }))
                             .child(
                                 svg()
                                     .path("icons/stop.svg")
-                                    .size(px(14.0))
+                                    .size(px(16.0))
                                     .text_color(icon_color)
                             )
                     } else {
-                        let icon_color = if is_selected { colors::on_accent() } else { colors::text_muted() };
+                        let icon_color = if is_selected { colors::on_accent() } else { colors::text_secondary() };
                         Theme::button_icon()
                             .id(SharedString::from(format!("start-{}", &id)))
-                            .w(px(24.0))
-                            .h(px(24.0))
                             .on_click(cx.listener(move |this, _, _window, cx| {
                                 this.start_container(&id_for_action, cx);
                             }))
                             .child(
                                 svg()
                                     .path("icons/play.svg")
-                                    .size(px(14.0))
+                                    .size(px(16.0))
                                     .text_color(icon_color)
                             )
                     })
                     .child({
-                        let icon_color = if is_selected { colors::on_accent() } else { colors::text_muted() };
+                        let icon_color = if is_selected { colors::on_accent() } else { colors::text_secondary() };
                         Theme::button_icon()
                             .id(SharedString::from(format!("delete-{}", &id)))
-                            .w(px(24.0))
-                            .h(px(24.0))
                             .on_click(cx.listener(move |this, _, _window, cx| {
                                 this.remove_container(&id_for_delete, cx);
                             }))
                             .child(
                                 svg()
                                     .path("icons/delete.svg")
-                                    .size(px(14.0))
+                                    .size(px(16.0))
                                     .text_color(icon_color)
                             )
                     }),
@@ -624,11 +644,12 @@ impl ContainersView {
         let icon_state = self.icon_service.read(cx).get_cached(&repo).cloned();
 
         match icon_state {
-            Some(IconState::Found(url)) => {
-                // Display fetched icon, fill the container
-                img(url)
-                    .w(px(28.0))
-                    .h(px(28.0))
+            Some(IconState::Found(path)) => {
+                // Display fetched icon from local cache file
+                img(path)
+                    .w(px(32.0))
+                    .h(px(32.0))
+                    .rounded(px(6.0))
                     .into_any_element()
             }
             // For Loading/NotFound/Error/None, show colored box icon
@@ -636,7 +657,7 @@ impl ContainersView {
                 let color = Self::get_color_for_repository(&repo);
                 svg()
                     .path("icons/box.svg")
-                    .size(px(16.0))
+                    .size(px(20.0))
                     .text_color(if is_selected { colors::on_accent() } else { color })
                     .into_any_element()
             }
@@ -675,7 +696,7 @@ impl ContainersView {
             .flex()
             .flex_col()
             .bg(colors::background())
-            // Tab bar using gpui-component
+            // Tab bar using gpui-component - macOS style
             .child(
                 div()
                     .h(px(52.0))
@@ -683,10 +704,9 @@ impl ContainersView {
                     .items_center()
                     .justify_center()
                     .border_b_1()
-                    .border_color(colors::border())
+                    .border_color(colors::border_subtle())
                     .child(
                         TabBar::new("detail-tabs")
-                            .small()
                             .segmented()
                             .children(DetailTab::ALL.iter().map(|tab| tab.label()))
                             .selected_index(selected_index)
@@ -716,7 +736,7 @@ impl ContainersView {
             .flex()
             .items_center()
             .justify_center()
-            .text_color(colors::text_muted())
+            .text_color(colors::text_secondary())
             .child("No Selection")
     }
 
@@ -731,7 +751,7 @@ impl ContainersView {
             .p_6()
             .child(
                 div()
-                    .text_color(colors::text_muted())
+                    .text_color(colors::text_secondary())
                     .text_sm()
                     .child("No containers yet"),
             )
@@ -746,7 +766,7 @@ impl ContainersView {
                     .child(
                         div()
                             .text_xs()
-                            .text_color(colors::text_muted())
+                            .text_color(colors::text_secondary())
                             .child("Quick start:"),
                     )
                     .child(Self::render_command_hint(
@@ -775,7 +795,7 @@ impl ContainersView {
                     .py_1()
                     .rounded(px(4.0))
                     .bg(colors::background())
-                    .font_family("monospace")
+                    .font_family(MONO_FONT)
                     .text_xs()
                     .text_color(colors::text())
                     .child(command),
@@ -783,7 +803,7 @@ impl ContainersView {
             .child(
                 div()
                     .text_xs()
-                    .text_color(colors::text_muted())
+                    .text_color(colors::text_secondary())
                     .child(desc),
             )
     }
@@ -798,6 +818,10 @@ impl ContainersView {
     }
 
     fn render_info_tab(&self, container: &ContainerViewModel) -> impl IntoElement {
+        // Sort labels alphabetically by key
+        let mut sorted_labels: Vec<_> = container.labels.iter().collect();
+        sorted_labels.sort_by(|a, b| a.0.cmp(b.0));
+
         div()
             .flex()
             .flex_col()
@@ -851,16 +875,77 @@ impl ContainersView {
                         )),
                 )
             })
+            // Labels section
+            .when(!container.labels.is_empty(), |el| {
+                el.child(
+                    div()
+                        .mt_4()
+                        .flex()
+                        .flex_col()
+                        .gap_2()
+                        .child(
+                            div()
+                                .text_sm()
+                                .font_weight(FontWeight::MEDIUM)
+                                .text_color(colors::text())
+                                .child(format!("Labels ({})", container.labels.len())),
+                        )
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap_1()
+                                .children(sorted_labels.iter().map(|(key, value)| {
+                                    Self::render_label_row(key, value)
+                                })),
+                        ),
+                )
+            })
+    }
+
+    fn render_label_row(key: &str, value: &str) -> impl IntoElement {
+        div()
+            .flex()
+            .flex_col()
+            .gap_0p5()
+            .py_1()
+            .child(
+                div()
+                    .text_xs()
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(colors::text_secondary())
+                    .child(key.to_string()),
+            )
+            .child(
+                div()
+                    .text_sm()
+                    .text_color(colors::text())
+                    .font_family(MONO_FONT)
+                    .child(value.to_string()),
+            )
     }
 
     fn render_logs_tab(&self) -> impl IntoElement {
+        if let Some(ref id) = self.selected_id {
+            if let Some(viewer) = self.log_viewers.get(id) {
+                return div()
+                    .size_full()
+                    .min_w_0()
+                    .overflow_hidden()
+                    .child(viewer.clone())
+                    .into_any_element();
+            }
+        }
+
+        // Fallback if no viewer available
         div()
             .flex_1()
             .flex()
             .items_center()
             .justify_center()
-            .text_color(colors::text_muted())
-            .child("Logs viewer coming soon...")
+            .text_color(colors::text_secondary())
+            .child("Select a container to view logs")
+            .into_any_element()
     }
 
     fn render_terminal_tab(&self) -> impl IntoElement {
@@ -869,7 +954,7 @@ impl ContainersView {
             .flex()
             .items_center()
             .justify_center()
-            .text_color(colors::text_muted())
+            .text_color(colors::text_secondary())
             .child("Terminal coming soon...")
     }
 
@@ -879,7 +964,7 @@ impl ContainersView {
             .flex()
             .items_center()
             .justify_center()
-            .text_color(colors::text_muted())
+            .text_color(colors::text_secondary())
             .child("File browser coming soon...")
     }
 }

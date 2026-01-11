@@ -25,7 +25,7 @@ impl Render for MachineDetailView {
             .bg(colors::background())
             .child(
                 div()
-                    .text_color(colors::text_muted())
+                    .text_color(colors::text_secondary())
                     .child("Machine Detail (Coming Soon)"),
             )
     }

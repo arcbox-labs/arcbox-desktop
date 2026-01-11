@@ -6,7 +6,7 @@ use gpui_component::Sizable;
 
 use crate::models::{ImageViewModel, calculate_image_stats};
 use crate::services::{ImageIconService, IconState};
-use crate::theme::{colors, Theme};
+use crate::theme::{colors, Theme, MONO_FONT};
 
 /// Detail tab for images
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -193,7 +193,7 @@ impl Render for ImagesView {
                                     .child(
                                         div()
                                             .text_xs()
-                                            .text_color(colors::text_muted())
+                                            .text_color(colors::text_secondary())
                                             .child(format_size(total_size)),
                                     ),
                             )
@@ -205,17 +205,17 @@ impl Render for ImagesView {
                                     .child(
                                         Theme::button_icon()
                                             .id("sort-images")
-                                            .child(svg().path("icons/sort.svg").size(px(14.0)).text_color(colors::text_muted()))
+                                            .child(svg().path("icons/sort.svg").size(px(16.0)).text_color(colors::text_secondary()))
                                     )
                                     .child(
                                         Theme::button_icon()
                                             .id("search-images")
-                                            .child(svg().path("icons/search.svg").size(px(14.0)).text_color(colors::text_muted()))
+                                            .child(svg().path("icons/search.svg").size(px(16.0)).text_color(colors::text_secondary()))
                                     )
                                     .child(
                                         Theme::button_icon()
                                             .id("add-image")
-                                            .child(svg().path("icons/add.svg").size(px(14.0)).text_color(colors::text_muted()))
+                                            .child(svg().path("icons/add.svg").size(px(16.0)).text_color(colors::text_secondary()))
                                     ),
                             ),
                     )
@@ -225,7 +225,7 @@ impl Render for ImagesView {
                             .px_4()
                             .py_2()
                             .text_xs()
-                            .text_color(colors::text_muted())
+                            .text_color(colors::text_secondary())
                             .child("In Use"),
                     )
                     // Image list
@@ -364,7 +364,7 @@ impl ImagesView {
                         div()
                             .text_xs()
                             .when(is_selected, |el| el.text_color(rgba(0xffffffaa)))
-                            .when(!is_selected, |el| el.text_color(colors::text_muted()))
+                            .when(!is_selected, |el| el.text_color(colors::text_secondary()))
                             .child(format!(
                                 "{}, {}",
                                 image.size_display(),
@@ -374,11 +374,11 @@ impl ImagesView {
             )
             // Delete button
             .child({
-                let icon_color = if is_selected { colors::on_accent() } else { colors::text_muted() };
+                let icon_color = if is_selected { colors::on_accent() } else { colors::text_secondary() };
                 Theme::button_icon()
                     .w(px(24.0))
                     .h(px(24.0))
-                    .child(svg().path("icons/delete.svg").size(px(14.0)).text_color(icon_color))
+                    .child(svg().path("icons/delete.svg").size(px(16.0)).text_color(icon_color))
             })
     }
 
@@ -389,11 +389,11 @@ impl ImagesView {
         _is_selected: bool,
     ) -> impl IntoElement {
         match icon_state {
-            Some(IconState::Found(url)) => {
-                // Display fetched icon from URL
-                img(url)
-                    .w(px(24.0))
-                    .h(px(24.0))
+            Some(IconState::Found(path)) => {
+                // Display fetched icon from local cache file
+                img(path)
+                    .w(px(28.0))
+                    .h(px(28.0))
                     .rounded(px(4.0))
                     .into_any_element()
             }
@@ -403,7 +403,7 @@ impl ImagesView {
                 let color = Self::get_color_for_repository(repository);
                 svg()
                     .path("icons/box.svg")
-                    .size(px(16.0))
+                    .size(px(18.0))
                     .text_color(color)
                     .into_any_element()
             }
@@ -455,7 +455,6 @@ impl ImagesView {
                     .border_color(colors::border())
                     .child(
                         TabBar::new("image-detail-tabs")
-                            .small()
                             .segmented()
                             .children(ImageDetailTab::ALL.iter().map(|tab| tab.label()))
                             .selected_index(selected_index)
@@ -485,7 +484,7 @@ impl ImagesView {
             .flex()
             .items_center()
             .justify_center()
-            .text_color(colors::text_muted())
+            .text_color(colors::text_secondary())
             .child("No Selection")
     }
 
@@ -500,7 +499,7 @@ impl ImagesView {
             .p_6()
             .child(
                 div()
-                    .text_color(colors::text_muted())
+                    .text_color(colors::text_secondary())
                     .text_sm()
                     .child("No images yet"),
             )
@@ -515,7 +514,7 @@ impl ImagesView {
                     .child(
                         div()
                             .text_xs()
-                            .text_color(colors::text_muted())
+                            .text_color(colors::text_secondary())
                             .child("Pull an image:"),
                     )
                     .child(Self::render_command_hint(
@@ -544,7 +543,7 @@ impl ImagesView {
                     .py_1()
                     .rounded(px(4.0))
                     .bg(colors::background())
-                    .font_family("monospace")
+                    .font_family(MONO_FONT)
                     .text_xs()
                     .text_color(colors::text())
                     .child(command),
@@ -552,7 +551,7 @@ impl ImagesView {
             .child(
                 div()
                     .text_xs()
-                    .text_color(colors::text_muted())
+                    .text_color(colors::text_secondary())
                     .child(desc),
             )
     }
@@ -609,7 +608,7 @@ impl ImagesView {
                             .flex()
                             .items_center()
                             .justify_center()
-                            .child(svg().path("icons/download.svg").size(px(14.0)).text_color(colors::text())),
+                            .child(svg().path("icons/download.svg").size(px(16.0)).text_color(colors::text())),
                     )
                     .child(
                         div()
@@ -620,7 +619,7 @@ impl ImagesView {
                     )
                     .child(
                         div()
-                            .text_color(colors::text_muted())
+                            .text_color(colors::text_secondary())
                             .child("›"),
                     ),
             )
@@ -632,7 +631,7 @@ impl ImagesView {
             .flex()
             .items_center()
             .justify_center()
-            .text_color(colors::text_muted())
+            .text_color(colors::text_secondary())
             .child(format!("{} coming soon...", name))
     }
 }

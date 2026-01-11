@@ -286,12 +286,12 @@ impl SettingsView {
             .child(
                 svg()
                     .path(section.icon_path())
-                    .size(px(16.0))
+                    .size(px(18.0))
                     .flex_shrink_0()
                     .text_color(if is_active {
                         colors::on_accent()
                     } else {
-                        colors::text_muted()
+                        colors::text_secondary()
                     }),
             )
             .child(section.label())
@@ -445,7 +445,7 @@ impl SettingsView {
                     .p_6()
                     .child(
                         div()
-                            .text_color(colors::text_muted())
+                            .text_color(colors::text_secondary())
                             .child(format!("{} settings coming soon...", name)),
                     ),
             )
@@ -520,7 +520,7 @@ impl SettingsView {
                         el.child(
                             div()
                                 .text_xs()
-                                .text_color(colors::text_muted())
+                                .text_color(colors::text_secondary())
                                 .child(desc),
                         )
                     }),
@@ -592,7 +592,7 @@ impl SettingsView {
                         el.child(
                             div()
                                 .text_xs()
-                                .text_color(colors::text_muted())
+                                .text_color(colors::text_secondary())
                                 .child(desc),
                         )
                     }),
@@ -640,7 +640,7 @@ impl SettingsView {
                 // Dropdown arrow
                 div()
                     .text_xs()
-                    .text_color(colors::text_muted())
+                    .text_color(colors::text_secondary())
                     .child("▾"),
             )
     }

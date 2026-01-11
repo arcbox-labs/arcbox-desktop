@@ -343,8 +343,8 @@ impl NewContainerDialog {
                     .child(
                         svg()
                             .path("icons/close.svg")
-                            .size(px(14.0))
-                            .text_color(colors::text_muted()),
+                            .size(px(16.0))
+                            .text_color(colors::text_secondary()),
                     ),
             )
     }
@@ -413,7 +413,7 @@ impl NewContainerDialog {
                     .child(
                         div()
                             .text_xs()
-                            .text_color(colors::text_muted())
+                            .text_color(colors::text_secondary())
                             .max_w(px(220.0))
                             .child(description),
                     ),
@@ -456,7 +456,7 @@ impl NewContainerDialog {
                         el.child(
                             div()
                                 .text_xs()
-                                .text_color(colors::text_muted())
+                                .text_color(colors::text_secondary())
                                 .max_w(px(300.0))
                                 .child(desc),
                         )

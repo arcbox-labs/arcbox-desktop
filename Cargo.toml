@@ -27,7 +27,7 @@ arcbox-api = { path = "../arcbox/crates/arcbox-api" }
 prost = "0.13"
 
 # Docker image icons
-dimicon = "0.0.1-beta.1"
+dimicon = { path = "../dimicon" }
 
 # gRPC
 tonic = "0.12"
@@ -55,3 +55,20 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 [target.'cfg(target_os = "macos")'.dependencies]
 cocoa = "0.26"
 objc = "0.2"
+
+[package.metadata.bundle]
+name = "ArcBox"
+identifier = "com.aprilnea.arcbox"
+icon = ["bundle/AppIcon.icns"]
+copyright = "Copyright © 2026 AprilNEA LLC. All rights reserved."
+category = "public.app-category.developer-tools"
+osx_minimum_system_version = "12.0"
+short_description = "ArcBox is a Docker management desktop application."
+
+[package.metadata.winres]
+OriginalFilename = "arcbox.exe"
+LegalCopyright = "Copyright © 2026 AprilNEA LLC. All rights reserved."
+
+[package.metadata.appimage]
+icon = "bundle/arcbox.png"
+assets = ["assets/arcbox.desktop"]

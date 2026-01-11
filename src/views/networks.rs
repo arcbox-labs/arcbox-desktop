@@ -3,24 +3,24 @@ use gpui::prelude::*;
 use gpui_component::tab::TabBar;
 use gpui_component::Sizable;
 
-use crate::models::VolumeViewModel;
+use crate::models::NetworkViewModel;
 use crate::theme::{colors, Theme, MONO_FONT};
 
-/// Detail tab for volumes
+/// Detail tab for networks
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum VolumeDetailTab {
+pub enum NetworkDetailTab {
     #[default]
     Info,
-    Files,
+    Containers,
 }
 
-impl VolumeDetailTab {
-    const ALL: [VolumeDetailTab; 2] = [VolumeDetailTab::Info, VolumeDetailTab::Files];
+impl NetworkDetailTab {
+    const ALL: [NetworkDetailTab; 2] = [NetworkDetailTab::Info, NetworkDetailTab::Containers];
 
     fn label(&self) -> &'static str {
         match self {
-            VolumeDetailTab::Info => "Info",
-            VolumeDetailTab::Files => "Files",
+            NetworkDetailTab::Info => "Info",
+            NetworkDetailTab::Containers => "Containers",
         }
     }
 
@@ -50,20 +50,20 @@ const LIST_MIN_WIDTH: f32 = 200.0;
 const LIST_MAX_WIDTH: f32 = 500.0;
 const LIST_DEFAULT_WIDTH: f32 = 380.0;
 
-/// Volumes list view
-pub struct VolumesView {
-    volumes: Vec<VolumeViewModel>,
+/// Networks list view
+pub struct NetworksView {
+    networks: Vec<NetworkViewModel>,
     selected_id: Option<String>,
-    active_tab: VolumeDetailTab,
+    active_tab: NetworkDetailTab,
     list_width: f32,
 }
 
-impl VolumesView {
+impl NetworksView {
     pub fn new(_cx: &mut Context<Self>) -> Self {
         Self {
-            volumes: Vec::new(),
+            networks: Vec::new(),
             selected_id: None,
-            active_tab: VolumeDetailTab::Info,
+            active_tab: NetworkDetailTab::Info,
             list_width: LIST_DEFAULT_WIDTH,
         }
     }
@@ -73,26 +73,26 @@ impl VolumesView {
         cx.notify();
     }
 
-    fn select_volume(&mut self, id: String, cx: &mut Context<Self>) {
+    fn select_network(&mut self, id: String, cx: &mut Context<Self>) {
         self.selected_id = Some(id);
         cx.notify();
     }
 
-    fn set_tab(&mut self, tab: VolumeDetailTab, cx: &mut Context<Self>) {
+    fn set_tab(&mut self, tab: NetworkDetailTab, cx: &mut Context<Self>) {
         self.active_tab = tab;
         cx.notify();
     }
 
-    fn get_selected_volume(&self) -> Option<&VolumeViewModel> {
+    fn get_selected_network(&self) -> Option<&NetworkViewModel> {
         self.selected_id
             .as_ref()
-            .and_then(|id| self.volumes.iter().find(|v| &v.name == id))
+            .and_then(|id| self.networks.iter().find(|n| &n.id == id))
     }
 }
 
-impl Render for VolumesView {
+impl Render for NetworksView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let total_size: u64 = self.volumes.iter().filter_map(|v| v.size_bytes).sum();
+        let network_count = self.networks.len();
         let list_width = self.list_width;
         let sidebar_width: f32 = 180.0;
 
@@ -101,7 +101,7 @@ impl Render for VolumesView {
             .flex()
             .flex_row()
             .overflow_hidden()
-            // Left panel - volume list
+            // Left panel - network list
             .child(
                 div()
                     .w(px(list_width))
@@ -128,13 +128,13 @@ impl Render for VolumesView {
                                             .text_base()
                                             .font_weight(FontWeight::MEDIUM)
                                             .text_color(colors::text())
-                                            .child("Volumes"),
+                                            .child("Networks"),
                                     )
                                     .child(
                                         div()
                                             .text_xs()
                                             .text_color(colors::text_secondary())
-                                            .child(format_size(total_size)),
+                                            .child(format!("{} networks", network_count)),
                                     ),
                             )
                             .child(
@@ -144,48 +144,39 @@ impl Render for VolumesView {
                                     .gap_1()
                                     .child(
                                         Theme::button_icon()
-                                            .id("sort-volumes")
+                                            .id("sort-networks")
                                             .child(svg().path("icons/sort.svg").size(px(16.0)).text_color(colors::text_secondary()))
                                     )
                                     .child(
                                         Theme::button_icon()
-                                            .id("search-volumes")
+                                            .id("search-networks")
                                             .child(svg().path("icons/search.svg").size(px(16.0)).text_color(colors::text_secondary()))
                                     )
                                     .child(
                                         Theme::button_icon()
-                                            .id("add-volume")
+                                            .id("add-network")
                                             .child(svg().path("icons/add.svg").size(px(16.0)).text_color(colors::text_secondary()))
                                     ),
                             ),
                     )
-                    // "In Use" section header
+                    // Network list
                     .child(
                         div()
-                            .px_4()
-                            .py_2()
-                            .text_xs()
-                            .text_color(colors::text_secondary())
-                            .child("In Use"),
-                    )
-                    // Volume list
-                    .child(
-                        div()
-                            .id("volumes-list")
+                            .id("networks-list")
                             .flex_1()
                             .overflow_y_scroll()
-                            .when(self.volumes.is_empty(), |el| {
+                            .when(self.networks.is_empty(), |el| {
                                 el.child(self.render_empty_state())
                             })
-                            .when(!self.volumes.is_empty(), |el| {
+                            .when(!self.networks.is_empty(), |el| {
                                 el.child(
                                     div()
                                         .flex()
                                         .flex_col()
                                         .children(
-                                            self.volumes
+                                            self.networks
                                                 .iter()
-                                                .map(|volume| self.render_volume_row(volume, cx)),
+                                                .map(|network| self.render_network_row(network, cx)),
                                         ),
                                 )
                             }),
@@ -194,7 +185,7 @@ impl Render for VolumesView {
             // Resize handle
             .child(
                 div()
-                    .id("volume-list-resize")
+                    .id("network-list-resize")
                     .w(px(1.0))
                     .h_full()
                     .flex_shrink_0()
@@ -214,18 +205,19 @@ impl Render for VolumesView {
     }
 }
 
-impl VolumesView {
-    fn render_volume_row(
+impl NetworksView {
+    fn render_network_row(
         &self,
-        volume: &VolumeViewModel,
+        network: &NetworkViewModel,
         cx: &Context<Self>,
     ) -> impl IntoElement {
-        let id = volume.name.clone();
-        let id_for_select = volume.name.clone();
+        let id = network.id.clone();
+        let id_for_select = network.id.clone();
         let is_selected = self.selected_id.as_ref() == Some(&id);
+        let is_system = network.is_system();
 
         let base = div()
-            .id(SharedString::from(format!("volume-{}", &id)))
+            .id(SharedString::from(format!("network-{}", &id)))
             .flex()
             .items_center()
             .gap_3()
@@ -233,7 +225,7 @@ impl VolumesView {
             .py_2()
             .cursor_pointer()
             .on_click(cx.listener(move |this, _, _window, cx| {
-                this.select_volume(id_for_select.clone(), cx);
+                this.select_network(id_for_select.clone(), cx);
             }));
 
         let base = if is_selected {
@@ -243,7 +235,7 @@ impl VolumesView {
         };
 
         base
-            // Volume icon
+            // Network icon
             .child(
                 div()
                     .w(px(32.0))
@@ -258,9 +250,9 @@ impl VolumesView {
                     .items_center()
                     .justify_center()
                     .text_sm()
-                    .child("▤"),
+                    .child(if is_system { "🌐" } else { "🔗" }),
             )
-            // Name and size
+            // Name and driver
             .child(
                 div()
                     .flex_1()
@@ -273,28 +265,30 @@ impl VolumesView {
                             .text_ellipsis()
                             .overflow_hidden()
                             .whitespace_nowrap()
-                            .child(volume.name.clone()),
+                            .child(network.name.clone()),
                     )
                     .child(
                         div()
                             .text_xs()
                             .when(is_selected, |el| el.text_color(rgba(0xffffffaa)))
                             .when(!is_selected, |el| el.text_color(colors::text_secondary()))
-                            .child(volume.size_display()),
+                            .child(network.driver_display()),
                     ),
             )
-            // Delete button
-            .child({
+            // Delete button (only for non-system networks)
+            .when(!is_system, |el| {
                 let icon_color = if is_selected { colors::on_accent() } else { colors::text_secondary() };
-                Theme::button_icon()
-                    .w(px(24.0))
-                    .h(px(24.0))
-                    .child(svg().path("icons/delete.svg").size(px(16.0)).text_color(icon_color))
+                el.child(
+                    Theme::button_icon()
+                        .w(px(24.0))
+                        .h(px(24.0))
+                        .child(svg().path("icons/delete.svg").size(px(16.0)).text_color(icon_color))
+                )
             })
     }
 
     fn render_detail_panel(&self, cx: &Context<Self>) -> impl IntoElement {
-        let selected = self.get_selected_volume();
+        let selected = self.get_selected_network();
         let selected_index = self.active_tab.to_index();
 
         div()
@@ -312,24 +306,24 @@ impl VolumesView {
                     .border_b_1()
                     .border_color(colors::border())
                     .child(
-                        TabBar::new("volume-detail-tabs")
+                        TabBar::new("network-detail-tabs")
                             .segmented()
-                            .children(VolumeDetailTab::ALL.iter().map(|tab| tab.label()))
+                            .children(NetworkDetailTab::ALL.iter().map(|tab| tab.label()))
                             .selected_index(selected_index)
                             .on_click(cx.listener(|this, index: &usize, _window, cx| {
-                                this.set_tab(VolumeDetailTab::from_index(*index), cx);
+                                this.set_tab(NetworkDetailTab::from_index(*index), cx);
                             })),
                     ),
             )
             // Tab content
             .child(
                 div()
-                    .id("volume-detail-content")
+                    .id("network-detail-content")
                     .flex_1()
                     .overflow_y_scroll()
                     .p_4()
-                    .child(if let Some(volume) = selected {
-                        self.render_detail_content(volume).into_any_element()
+                    .child(if let Some(network) = selected {
+                        self.render_detail_content(network).into_any_element()
                     } else {
                         self.render_no_selection().into_any_element()
                     }),
@@ -359,7 +353,7 @@ impl VolumesView {
                 div()
                     .text_color(colors::text_secondary())
                     .text_sm()
-                    .child("No volumes yet"),
+                    .child("No networks yet"),
             )
             .child(
                 div()
@@ -373,15 +367,15 @@ impl VolumesView {
                         div()
                             .text_xs()
                             .text_color(colors::text_secondary())
-                            .child("Create a volume:"),
+                            .child("Create a network:"),
                     )
                     .child(Self::render_command_hint(
-                        "docker volume create mydata",
-                        "Create named volume",
+                        "docker network create mynet",
+                        "Create bridge network",
                     ))
                     .child(Self::render_command_hint(
-                        "docker run -v mydata:/data nginx",
-                        "Mount volume to container",
+                        "docker network create --driver overlay mynet",
+                        "Create overlay network",
                     )),
             )
     }
@@ -410,14 +404,14 @@ impl VolumesView {
             )
     }
 
-    fn render_detail_content(&self, volume: &VolumeViewModel) -> impl IntoElement {
+    fn render_detail_content(&self, network: &NetworkViewModel) -> impl IntoElement {
         match self.active_tab {
-            VolumeDetailTab::Info => self.render_info_tab(volume).into_any_element(),
-            VolumeDetailTab::Files => self.render_placeholder_tab("Files").into_any_element(),
+            NetworkDetailTab::Info => self.render_info_tab(network).into_any_element(),
+            NetworkDetailTab::Containers => self.render_placeholder_tab("Containers").into_any_element(),
         }
     }
 
-    fn render_info_tab(&self, volume: &VolumeViewModel) -> impl IntoElement {
+    fn render_info_tab(&self, network: &NetworkViewModel) -> impl IntoElement {
         div()
             .flex()
             .flex_col()
@@ -426,10 +420,14 @@ impl VolumesView {
                 div()
                     .flex()
                     .flex_col()
-                    .child(Theme::info_row("Name", volume.name.clone()))
-                    .child(Theme::info_row("Driver", volume.driver.clone()))
-                    .child(Theme::info_row("Size", volume.size_display()))
-                    .child(Theme::info_row("Created", volume.created_ago())),
+                    .child(Theme::info_row("Name", network.name.clone()))
+                    .child(Theme::info_row("ID", network.short_id()))
+                    .child(Theme::info_row("Driver", network.driver.clone()))
+                    .child(Theme::info_row("Scope", network.scope.clone()))
+                    .child(Theme::info_row("Created", network.created_ago()))
+                    .child(Theme::info_row("Internal", if network.internal { "Yes" } else { "No" }))
+                    .child(Theme::info_row("Attachable", if network.attachable { "Yes" } else { "No" }))
+                    .child(Theme::info_row("Containers", network.usage_display())),
             )
     }
 
@@ -441,15 +439,5 @@ impl VolumesView {
             .justify_center()
             .text_color(colors::text_secondary())
             .child(format!("{} coming soon...", name))
-    }
-}
-
-fn format_size(bytes: u64) -> String {
-    let gb = bytes as f64 / 1_000_000_000.0;
-    if gb >= 1.0 {
-        format!("{:.2} GB total", gb)
-    } else {
-        let mb = bytes as f64 / 1_000_000.0;
-        format!("{:.0} MB total", mb)
     }
 }

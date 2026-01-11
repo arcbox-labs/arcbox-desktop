@@ -25,7 +25,7 @@ impl Render for ContainerDetailView {
             .bg(colors::background())
             .child(
                 div()
-                    .text_color(colors::text_muted())
+                    .text_color(colors::text_secondary())
                     .child("Container Detail (Coming Soon)"),
             )
     }

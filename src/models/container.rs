@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use arcbox_api::generated::{PortBinding as ProtoPortBinding, ContainerSummary};
 use chrono::{DateTime, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
@@ -46,6 +48,7 @@ pub struct ContainerViewModel {
     pub ports: Vec<PortMapping>,
     pub created_at: DateTime<Utc>,
     pub compose_project: Option<String>,
+    pub labels: HashMap<String, String>,
     pub cpu_percent: f64,
     pub memory_mb: f64,
     pub memory_limit_mb: f64,
@@ -127,6 +130,7 @@ impl From<ContainerSummary> for ContainerViewModel {
             ports: summary.ports.iter().map(PortMapping::from).collect(),
             created_at,
             compose_project,
+            labels: summary.labels,
             // Resource usage requires separate stats call, default to 0
             cpu_percent: 0.0,
             memory_mb: 0.0,

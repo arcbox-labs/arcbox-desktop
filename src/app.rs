@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use gpui::*;
 use gpui::prelude::*;
 
@@ -8,7 +10,7 @@ use crate::theme::{colors, Theme};
 use crate::views::*;
 
 // Define actions using the actions! macro
-actions!(arcbox, [OpenSettings, Quit]);
+actions!(arcbox, [OpenSettings, Quit, ToggleSidebar]);
 
 /// Sidebar resize drag state
 #[derive(Clone)]
@@ -55,6 +57,7 @@ impl NavItem {
 pub struct ArcBoxApp {
     current_nav: NavItem,
     sidebar_width: f32,
+    sidebar_collapsed: bool,
     // Lifecycle management
     daemon_manager: Entity<DaemonManager>,
     // Shared services
@@ -65,11 +68,14 @@ pub struct ArcBoxApp {
     machines_view: Entity<MachinesView>,
     images_view: Entity<ImagesView>,
     volumes_view: Entity<VolumesView>,
+    networks_view: Entity<NetworksView>,
 }
 
 const SIDEBAR_MIN_WIDTH: f32 = 120.0;
 const SIDEBAR_MAX_WIDTH: f32 = 300.0;
 const SIDEBAR_DEFAULT_WIDTH: f32 = 180.0;
+const SIDEBAR_COLLAPSED_WIDTH: f32 = 52.0;
+const SIDEBAR_ANIMATION_DURATION: Duration = Duration::from_millis(250);
 
 impl ArcBoxApp {
     pub fn new(cx: &mut Context<Self>) -> Self {
@@ -91,6 +97,7 @@ impl ArcBoxApp {
             ImagesView::new(daemon_service.clone(), image_icon_service.clone(), cx)
         });
         let volumes_view = cx.new(VolumesView::new);
+        let networks_view = cx.new(NetworksView::new);
 
         // Subscribe to daemon manager events - connect when daemon is ready
         let daemon_service_clone = daemon_service.clone();
@@ -135,6 +142,15 @@ impl ArcBoxApp {
                         view.on_images_loaded(response.clone(), cx);
                     });
                 }
+                DaemonEvent::NetworksLoaded(_response) => {
+                    // TODO: Forward to networks view when it supports data loading
+                }
+                DaemonEvent::NetworkCreated(id) => {
+                    tracing::info!("Network created: {}", id);
+                }
+                DaemonEvent::NetworkRemoved(id) => {
+                    tracing::info!("Network removed: {}", id);
+                }
                 DaemonEvent::ContainerCreated(id) => {
                     tracing::info!("Container created: {}", id);
                 }
@@ -151,6 +167,9 @@ impl ArcBoxApp {
                     tracing::error!("Operation failed: {}", error);
                     // TODO: Show error notification to user
                 }
+                DaemonEvent::LogsReceived { .. } => {
+                    // Handled by LogViewer components directly via their own subscriptions
+                }
             }
         })
         .detach();
@@ -163,6 +182,7 @@ impl ArcBoxApp {
         Self {
             current_nav: NavItem::Containers,
             sidebar_width: SIDEBAR_DEFAULT_WIDTH,
+            sidebar_collapsed: false,
             daemon_manager,
             daemon_service,
             image_icon_service,
@@ -170,6 +190,7 @@ impl ArcBoxApp {
             machines_view,
             images_view,
             volumes_view,
+            networks_view,
         }
     }
 
@@ -182,60 +203,124 @@ impl ArcBoxApp {
         self.sidebar_width = new_width.clamp(SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH);
         cx.notify();
     }
+
+    fn toggle_sidebar(&mut self, cx: &mut Context<Self>) {
+        self.sidebar_collapsed = !self.sidebar_collapsed;
+        cx.notify();
+    }
 }
 
 impl Render for ArcBoxApp {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let sidebar_width = self.sidebar_width;
+        let sidebar_collapsed = self.sidebar_collapsed;
 
         div()
             .size_full()
-            .relative()
             .flex()
             .flex_row()
             .bg(colors::background())
             .text_color(colors::text())
-            // Sidebar
+            // Sidebar (animates width)
             .child(self.render_sidebar(cx))
-            // Resize handle
-            .child(self.render_resize_handle(sidebar_width, cx))
-            // Main content
-            .child(self.render_main_content())
+            // Resize handle (hidden when collapsed)
+            .when(!sidebar_collapsed, |el| {
+                el.child(self.render_resize_handle(sidebar_width, cx))
+            })
+            // Main content (naturally expands as sidebar shrinks)
+            .child(self.render_main_content_without_header())
     }
 }
 
 impl ArcBoxApp {
+    /// Sidebar with collapse/expand animation
     fn render_sidebar(&self, cx: &Context<Self>) -> impl IntoElement {
+        let collapsed = self.sidebar_collapsed;
+        let expanded_width = self.sidebar_width;
+        let collapsed_width = SIDEBAR_COLLAPSED_WIDTH;
+
         div()
-            .w(px(self.sidebar_width))
+            .id("sidebar")
             .h_full()
             .flex()
             .flex_col()
             .bg(colors::sidebar())
             .flex_shrink_0()
+            .overflow_hidden()
             // Titlebar area (for traffic lights on macOS)
-            .child(div().h(px(52.0)))
-            // Docker section
-            .child(Theme::sidebar_section_header("Docker"))
-            .child(self.render_nav_item(NavItem::Containers, cx))
-            .child(self.render_nav_item(NavItem::Volumes, cx))
-            .child(self.render_nav_item(NavItem::Images, cx))
-            .child(self.render_nav_item(NavItem::Networks, cx))
-            // Linux section
-            .child(div().h(px(8.0))) // Spacer
-            .child(Theme::sidebar_section_header("Linux"))
-            .child(self.render_nav_item(NavItem::Machines, cx))
+            .child(
+                div()
+                    .h(px(52.0))
+                    .flex()
+                    .items_end()
+                    .justify_end()
+                    .px_2()
+                    .pb_1()
+                    // Toggle button (always visible)
+                    .child(
+                        div()
+                            .id("sidebar-toggle")
+                            .w(px(24.0))
+                            .h(px(24.0))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .rounded(px(4.0))
+                            .cursor_pointer()
+                            .hover(|el| el.bg(colors::hover()))
+                            .on_click(cx.listener(|this, _, _window, cx| {
+                                this.toggle_sidebar(cx);
+                            }))
+                            .child(
+                                svg()
+                                    .path("icons/sidebar.svg")
+                                    .size(px(14.0))
+                                    .text_color(colors::text_secondary()),
+                            ),
+                    ),
+            )
+            // Docker section header (hidden when collapsed)
+            .when(!collapsed, |el| {
+                el.child(Theme::sidebar_section_header("Docker"))
+            })
+            .child(self.render_nav_item(NavItem::Containers, collapsed, cx))
+            .child(self.render_nav_item(NavItem::Volumes, collapsed, cx))
+            .child(self.render_nav_item(NavItem::Images, collapsed, cx))
+            .child(self.render_nav_item(NavItem::Networks, collapsed, cx))
+            // Linux section header (hidden when collapsed)
+            .when(!collapsed, |el| {
+                el.child(Theme::sidebar_section_header("Linux"))
+            })
+            .when(collapsed, |el| {
+                el.child(div().h(px(16.0))) // Separator when collapsed
+            })
+            .child(self.render_nav_item(NavItem::Machines, collapsed, cx))
             // Bottom spacer
             .child(div().flex_1())
+            // Animate width
+            .with_animation(
+                ElementId::Name(
+                    format!("sidebar-{}", if collapsed { "collapse" } else { "expand" }).into()
+                ),
+                Animation::new(SIDEBAR_ANIMATION_DURATION),
+                move |el, delta| {
+                    let (start, end) = if collapsed {
+                        (expanded_width, collapsed_width)
+                    } else {
+                        (collapsed_width, expanded_width)
+                    };
+                    el.w(px(start + delta * (end - start)))
+                },
+            )
     }
 
     fn render_resize_handle(&self, current_width: f32, cx: &Context<Self>) -> impl IntoElement {
         div()
             .id("sidebar-resize-handle")
-            .w(px(4.0))
+            .w(px(1.0))
             .h_full()
             .cursor(CursorStyle::ResizeLeftRight)
-            .bg(colors::sidebar())
+            .bg(colors::border_subtle())
             .hover(|el| el.bg(colors::border()))
             .on_drag(
                 SidebarResizeDrag {
@@ -257,27 +342,37 @@ impl ArcBoxApp {
             ))
     }
 
-    fn render_nav_item(&self, item: NavItem, cx: &Context<Self>) -> impl IntoElement {
+    fn render_nav_item(&self, item: NavItem, collapsed: bool, cx: &Context<Self>) -> impl IntoElement {
         let is_active = self.current_nav == item;
 
         div()
             .id(SharedString::from(format!("nav-{:?}", item)))
-            .mx_2()
-            .ml_3() // Indent nav items
-            .px_2()
-            .py_1()
-            .rounded_md()
+            .when(collapsed, |el| {
+                // Centered icon only when collapsed
+                el.mx_auto()
+                    .w(px(36.0))
+                    .justify_center()
+            })
+            .when(!collapsed, |el| {
+                el.mx_2()
+                    .px_2()
+                    .gap_2()
+            })
+            .h(px(28.0)) // macOS standard row height
+            .rounded(px(6.0)) // macOS rounded corners
             .flex()
             .items_center()
-            .gap_2()
             .text_sm()
             .cursor_pointer()
+            // macOS sidebar: selected items have subtle gray bg, text stays dark
             .when(is_active, |el| {
-                el.bg(colors::selection()).text_color(colors::on_accent())
+                el.bg(colors::sidebar_item_selected())
+                    .text_color(colors::text())
+                    .font_weight(FontWeight::MEDIUM)
             })
             .when(!is_active, |el| {
                 el.text_color(colors::text())
-                    .hover(|el| el.bg(colors::hover()))
+                    .hover(|el| el.bg(colors::sidebar_item_hover()))
             })
             .on_click(cx.listener(move |this, _event, _window, cx| {
                 this.navigate(item, cx);
@@ -285,18 +380,22 @@ impl ArcBoxApp {
             .child(
                 svg()
                     .path(item.icon_path())
-                    .size(px(16.0))
+                    .size(px(18.0))
                     .flex_shrink_0()
                     .text_color(if is_active {
-                        colors::on_accent()
+                        colors::accent() // macOS uses accent color for selected icon
                     } else {
-                        colors::text()
+                        colors::text_secondary()
                     }),
             )
-            .child(item.label())
+            // Only show label when not collapsed
+            .when(!collapsed, |el| {
+                el.child(item.label())
+            })
     }
 
-    fn render_main_content(&self) -> impl IntoElement {
+    /// Main content area
+    fn render_main_content_without_header(&self) -> impl IntoElement {
         div()
             .flex_1()
             .h_full()
@@ -307,14 +406,7 @@ impl ArcBoxApp {
                 NavItem::Machines => self.machines_view.clone().into_any_element(),
                 NavItem::Images => self.images_view.clone().into_any_element(),
                 NavItem::Volumes => self.volumes_view.clone().into_any_element(),
-                NavItem::Networks => div()
-                    .flex_1()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .text_color(colors::text_muted())
-                    .child("Networks (Coming Soon)")
-                    .into_any_element(),
+                NavItem::Networks => self.networks_view.clone().into_any_element(),
             })
     }
 }
