@@ -178,6 +178,7 @@ impl Render for ArcBoxApp {
 
         div()
             .size_full()
+            .relative()
             .flex()
             .flex_row()
             .bg(colors::background())
