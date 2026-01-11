@@ -3,6 +3,8 @@ use std::collections::HashMap;
 use arcbox_api::generated::ListContainersResponse;
 use gpui::*;
 use gpui::prelude::*;
+use gpui_component::tab::TabBar;
+use gpui_component::Sizable;
 
 use crate::models::ContainerViewModel;
 use crate::services::{DaemonService, ImageIconService, IconState};
@@ -17,6 +19,36 @@ pub enum DetailTab {
     Logs,
     Terminal,
     Files,
+}
+
+impl DetailTab {
+    /// All tabs in order
+    const ALL: [DetailTab; 4] = [
+        DetailTab::Info,
+        DetailTab::Logs,
+        DetailTab::Terminal,
+        DetailTab::Files,
+    ];
+
+    /// Get label for the tab
+    fn label(&self) -> &'static str {
+        match self {
+            DetailTab::Info => "Info",
+            DetailTab::Logs => "Logs",
+            DetailTab::Terminal => "Terminal",
+            DetailTab::Files => "Files",
+        }
+    }
+
+    /// Convert index to DetailTab
+    fn from_index(index: usize) -> Self {
+        Self::ALL.get(index).copied().unwrap_or_default()
+    }
+
+    /// Convert DetailTab to index
+    fn to_index(&self) -> usize {
+        Self::ALL.iter().position(|t| t == self).unwrap_or(0)
+    }
 }
 
 /// Drag state for resizing the list panel
@@ -636,26 +668,32 @@ impl ContainersView {
 
     fn render_detail_panel(&self, cx: &Context<Self>) -> impl IntoElement {
         let selected = self.get_selected_container();
+        let selected_index = self.active_tab.to_index();
 
         div()
             .flex_1()
             .flex()
             .flex_col()
             .bg(colors::background())
-            // Tab bar
+            // Tab bar using gpui-component
             .child(
                 div()
+                    .h(px(52.0))
                     .flex()
                     .items_center()
-                    .h(px(52.0))
-                    .px_4()
-                    .gap_2()
+                    .justify_center()
                     .border_b_1()
                     .border_color(colors::border())
-                    .child(self.render_tab_button(DetailTab::Info, "Info", cx))
-                    .child(self.render_tab_button(DetailTab::Logs, "Logs", cx))
-                    .child(self.render_tab_button(DetailTab::Terminal, "Terminal", cx))
-                    .child(self.render_tab_button(DetailTab::Files, "Files", cx)),
+                    .child(
+                        TabBar::new("detail-tabs")
+                            .small()
+                            .segmented()
+                            .children(DetailTab::ALL.iter().map(|tab| tab.label()))
+                            .selected_index(selected_index)
+                            .on_click(cx.listener(|this, index: &usize, _window, cx| {
+                                this.set_tab(DetailTab::from_index(*index), cx);
+                            })),
+                    ),
             )
             // Tab content
             .child(
@@ -670,35 +708,6 @@ impl ContainersView {
                         self.render_no_selection().into_any_element()
                     }),
             )
-    }
-
-    fn render_tab_button(
-        &self,
-        tab: DetailTab,
-        label: &'static str,
-        cx: &Context<Self>,
-    ) -> impl IntoElement {
-        let is_active = self.active_tab == tab;
-
-        div()
-            .id(SharedString::from(format!("tab-{:?}", tab)))
-            .px_3()
-            .py_1p5()
-            .text_sm()
-            .cursor_pointer()
-            .rounded_md()
-            .when(is_active, |el| {
-                el.bg(colors::surface_elevated())
-                    .text_color(colors::text())
-            })
-            .when(!is_active, |el| {
-                el.text_color(colors::text_muted())
-                    .hover(|el| el.text_color(colors::text()))
-            })
-            .on_click(cx.listener(move |this, _, _window, cx| {
-                this.set_tab(tab, cx);
-            }))
-            .child(label)
     }
 
     fn render_no_selection(&self) -> impl IntoElement {

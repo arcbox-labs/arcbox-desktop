@@ -1,5 +1,7 @@
 use gpui::*;
 use gpui::prelude::*;
+use gpui_component::tab::TabBar;
+use gpui_component::Sizable;
 
 use crate::models::VolumeViewModel;
 use crate::theme::{colors, Theme};
@@ -10,6 +12,25 @@ pub enum VolumeDetailTab {
     #[default]
     Info,
     Files,
+}
+
+impl VolumeDetailTab {
+    const ALL: [VolumeDetailTab; 2] = [VolumeDetailTab::Info, VolumeDetailTab::Files];
+
+    fn label(&self) -> &'static str {
+        match self {
+            VolumeDetailTab::Info => "Info",
+            VolumeDetailTab::Files => "Files",
+        }
+    }
+
+    fn from_index(index: usize) -> Self {
+        Self::ALL.get(index).copied().unwrap_or_default()
+    }
+
+    fn to_index(&self) -> usize {
+        Self::ALL.iter().position(|t| t == self).unwrap_or(0)
+    }
 }
 
 /// Drag state for resizing the list panel
@@ -274,6 +295,7 @@ impl VolumesView {
 
     fn render_detail_panel(&self, cx: &Context<Self>) -> impl IntoElement {
         let selected = self.get_selected_volume();
+        let selected_index = self.active_tab.to_index();
 
         div()
             .flex_1()
@@ -283,15 +305,22 @@ impl VolumesView {
             // Tab bar
             .child(
                 div()
+                    .h(px(52.0))
                     .flex()
                     .items_center()
-                    .h(px(52.0))
-                    .px_4()
-                    .gap_2()
+                    .justify_center()
                     .border_b_1()
                     .border_color(colors::border())
-                    .child(self.render_tab_button(VolumeDetailTab::Info, "Info", cx))
-                    .child(self.render_tab_button(VolumeDetailTab::Files, "Files", cx)),
+                    .child(
+                        TabBar::new("volume-detail-tabs")
+                            .small()
+                            .segmented()
+                            .children(VolumeDetailTab::ALL.iter().map(|tab| tab.label()))
+                            .selected_index(selected_index)
+                            .on_click(cx.listener(|this, index: &usize, _window, cx| {
+                                this.set_tab(VolumeDetailTab::from_index(*index), cx);
+                            })),
+                    ),
             )
             // Tab content
             .child(
@@ -306,35 +335,6 @@ impl VolumesView {
                         self.render_no_selection().into_any_element()
                     }),
             )
-    }
-
-    fn render_tab_button(
-        &self,
-        tab: VolumeDetailTab,
-        label: &'static str,
-        cx: &Context<Self>,
-    ) -> impl IntoElement {
-        let is_active = self.active_tab == tab;
-
-        div()
-            .id(SharedString::from(format!("volume-tab-{:?}", tab)))
-            .px_3()
-            .py_1p5()
-            .text_sm()
-            .cursor_pointer()
-            .rounded_md()
-            .when(is_active, |el| {
-                el.bg(colors::surface_elevated())
-                    .text_color(colors::text())
-            })
-            .when(!is_active, |el| {
-                el.text_color(colors::text_muted())
-                    .hover(|el| el.text_color(colors::text()))
-            })
-            .on_click(cx.listener(move |this, _, _window, cx| {
-                this.set_tab(tab, cx);
-            }))
-            .child(label)
     }
 
     fn render_no_selection(&self) -> impl IntoElement {

@@ -1,6 +1,8 @@
 use arcbox_api::generated::ListImagesResponse;
 use gpui::*;
 use gpui::prelude::*;
+use gpui_component::tab::TabBar;
+use gpui_component::Sizable;
 
 use crate::models::{ImageViewModel, calculate_image_stats};
 use crate::services::{ImageIconService, IconState};
@@ -13,6 +15,30 @@ pub enum ImageDetailTab {
     Info,
     Terminal,
     Files,
+}
+
+impl ImageDetailTab {
+    const ALL: [ImageDetailTab; 3] = [
+        ImageDetailTab::Info,
+        ImageDetailTab::Terminal,
+        ImageDetailTab::Files,
+    ];
+
+    fn label(&self) -> &'static str {
+        match self {
+            ImageDetailTab::Info => "Info",
+            ImageDetailTab::Terminal => "Terminal",
+            ImageDetailTab::Files => "Files",
+        }
+    }
+
+    fn from_index(index: usize) -> Self {
+        Self::ALL.get(index).copied().unwrap_or_default()
+    }
+
+    fn to_index(&self) -> usize {
+        Self::ALL.iter().position(|t| t == self).unwrap_or(0)
+    }
 }
 
 /// Drag state for resizing the list panel
@@ -411,6 +437,7 @@ impl ImagesView {
 
     fn render_detail_panel(&self, cx: &Context<Self>) -> impl IntoElement {
         let selected = self.get_selected_image();
+        let selected_index = self.active_tab.to_index();
 
         div()
             .flex_1()
@@ -420,16 +447,22 @@ impl ImagesView {
             // Tab bar
             .child(
                 div()
+                    .h(px(52.0))
                     .flex()
                     .items_center()
-                    .h(px(52.0))
-                    .px_4()
-                    .gap_2()
+                    .justify_center()
                     .border_b_1()
                     .border_color(colors::border())
-                    .child(self.render_tab_button(ImageDetailTab::Info, "Info", cx))
-                    .child(self.render_tab_button(ImageDetailTab::Terminal, "Terminal", cx))
-                    .child(self.render_tab_button(ImageDetailTab::Files, "Files", cx)),
+                    .child(
+                        TabBar::new("image-detail-tabs")
+                            .small()
+                            .segmented()
+                            .children(ImageDetailTab::ALL.iter().map(|tab| tab.label()))
+                            .selected_index(selected_index)
+                            .on_click(cx.listener(|this, index: &usize, _window, cx| {
+                                this.set_tab(ImageDetailTab::from_index(*index), cx);
+                            })),
+                    ),
             )
             // Tab content
             .child(
@@ -444,35 +477,6 @@ impl ImagesView {
                         self.render_no_selection().into_any_element()
                     }),
             )
-    }
-
-    fn render_tab_button(
-        &self,
-        tab: ImageDetailTab,
-        label: &'static str,
-        cx: &Context<Self>,
-    ) -> impl IntoElement {
-        let is_active = self.active_tab == tab;
-
-        div()
-            .id(SharedString::from(format!("image-tab-{:?}", tab)))
-            .px_3()
-            .py_1p5()
-            .text_sm()
-            .cursor_pointer()
-            .rounded_md()
-            .when(is_active, |el| {
-                el.bg(colors::surface_elevated())
-                    .text_color(colors::text())
-            })
-            .when(!is_active, |el| {
-                el.text_color(colors::text_muted())
-                    .hover(|el| el.text_color(colors::text()))
-            })
-            .on_click(cx.listener(move |this, _, _window, cx| {
-                this.set_tab(tab, cx);
-            }))
-            .child(label)
     }
 
     fn render_no_selection(&self) -> impl IntoElement {
