@@ -97,11 +97,23 @@ impl ArcBoxApp {
         cx.subscribe(
             &daemon_manager,
             move |_this, _, event: &DaemonManagerEvent, cx| {
-                if let DaemonManagerEvent::StateChanged(DaemonState::Running) = event {
-                    tracing::info!("Daemon is running, connecting gRPC client...");
-                    daemon_service_clone.update(cx, |svc, cx| {
-                        svc.connect(cx);
-                    });
+                match event {
+                    DaemonManagerEvent::StateChanged(DaemonState::Running) => {
+                        tracing::info!("Daemon is running, connecting gRPC client...");
+                        daemon_service_clone.update(cx, |svc, cx| {
+                            svc.connect(cx);
+                        });
+                    }
+                    DaemonManagerEvent::StateChanged(DaemonState::Starting) => {
+                        tracing::info!("Daemon is starting...");
+                    }
+                    DaemonManagerEvent::StateChanged(DaemonState::Failed(err)) => {
+                        tracing::error!("Daemon failed to start: {}", err);
+                        // TODO: Show error notification to user
+                    }
+                    DaemonManagerEvent::StateChanged(DaemonState::Stopped) => {
+                        tracing::info!("Daemon stopped");
+                    }
                 }
             },
         )

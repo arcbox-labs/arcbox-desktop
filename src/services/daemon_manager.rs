@@ -109,7 +109,7 @@ impl DaemonManager {
             }
         }
 
-        // 2. Check alongside the executable (for development)
+        // 2. Check alongside the executable (for development - target/debug/)
         if let Ok(exe_path) = std::env::current_exe() {
             if let Some(exe_dir) = exe_path.parent() {
                 let daemon_alongside = exe_dir.join(DAEMON_BINARY);
@@ -117,10 +117,37 @@ impl DaemonManager {
                     tracing::info!("Found daemon alongside exe: {}", daemon_alongside.display());
                     return Some(daemon_alongside);
                 }
+
+                // 3. Check workspace target directory (for development with separate workspaces)
+                // exe is at: arcboxd/arcbox-desktop/target/debug/arcbox-desktop
+                // daemon is at: arcboxd/arcbox/target/debug/arcbox
+                // Walk up to find organization root (arcboxd/)
+                if let Some(target_dir) = exe_dir.parent() {
+                    // target_dir = arcbox-desktop/target
+                    if let Some(workspace_root) = target_dir.parent() {
+                        // workspace_root = arcbox-desktop
+                        if let Some(org_root) = workspace_root.parent() {
+                            // org_root = arcboxd
+                            // Check sibling workspace (arcboxd/arcbox/target/debug/arcbox)
+                            let sibling_daemon = org_root
+                                .join("arcbox")
+                                .join("target")
+                                .join("debug")
+                                .join(DAEMON_BINARY);
+                            if sibling_daemon.exists() {
+                                tracing::info!(
+                                    "Found daemon in sibling workspace: {}",
+                                    sibling_daemon.display()
+                                );
+                                return Some(sibling_daemon);
+                            }
+                        }
+                    }
+                }
             }
         }
 
-        // 3. Check in PATH
+        // 4. Check in PATH
         if let Ok(output) = std::process::Command::new("which")
             .arg(DAEMON_BINARY)
             .output()
@@ -174,14 +201,17 @@ impl DaemonManager {
     /// Start the daemon process
     pub fn start(&mut self, cx: &mut Context<Self>) {
         if matches!(self.state, DaemonState::Starting | DaemonState::Running) {
+            tracing::debug!("Daemon already starting or running, skipping start");
             return;
         }
 
         let Some(daemon_path) = self.daemon_path.clone() else {
+            tracing::error!("Daemon binary not found in bundle, alongside exe, or PATH");
             self.set_state(DaemonState::Failed("Daemon binary not found".into()), cx);
             return;
         };
 
+        tracing::info!("Starting daemon from: {}", daemon_path.display());
         self.set_state(DaemonState::Starting, cx);
 
         let socket_path = self.socket_path.clone();

@@ -509,6 +509,15 @@ impl NewContainerDialog {
     }
 
     fn render_footer(&self, cx: &Context<Self>) -> impl IntoElement {
+        // Get entity handle for use in button callbacks
+        // gpui-component Button.on_click expects Fn(&ClickEvent, &mut Window, &mut App)
+        // so we need to use entity.update() pattern instead of cx.listener()
+        let entity = cx.entity();
+
+        let cancel_entity = entity.clone();
+        let create_entity = entity.clone();
+        let create_start_entity = entity.clone();
+
         div()
             .px_4()
             .py_3()
@@ -537,9 +546,11 @@ impl NewContainerDialog {
                             .ghost()
                             .small()
                             .child("Cancel")
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.close_dialog(window, cx);
-                            }))
+                            .on_click(move |_, window, cx| {
+                                cancel_entity.update(cx, |this, cx| {
+                                    this.close_dialog(window, cx);
+                                });
+                            })
                     )
                     // Create button
                     .child(
@@ -547,9 +558,11 @@ impl NewContainerDialog {
                             .ghost()
                             .small()
                             .child("Create")
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.create_container(false, window, cx);
-                            }))
+                            .on_click(move |_, window, cx| {
+                                create_entity.update(cx, |this, cx| {
+                                    this.create_container(false, window, cx);
+                                });
+                            })
                     )
                     // Create & Start button (primary)
                     .child(
@@ -557,9 +570,11 @@ impl NewContainerDialog {
                             .primary()
                             .small()
                             .child("Create & Start")
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.create_container(true, window, cx);
-                            }))
+                            .on_click(move |_, window, cx| {
+                                create_start_entity.update(cx, |this, cx| {
+                                    this.create_container(true, window, cx);
+                                });
+                            })
                     ),
             )
     }
